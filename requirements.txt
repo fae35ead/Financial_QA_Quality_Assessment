@@ -1,0 +1,8 @@
+pandas
+os
+jieba
+transformers
+glob
+scikit-learn
+torch
+datasets

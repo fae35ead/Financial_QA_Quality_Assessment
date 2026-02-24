@@ -1,0 +1,18 @@
+# 忽略所有真实数据
+data/raw/*
+data/processed/*
+
+# 但保留数据的目录结构（放一个空的 .gitkeep 文件在里面）
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# 忽略模型权重文件（这玩意儿也有几百MB）
+models/*
+!models/.gitkeep
+
+# 忽略本地日志和缓存
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+logs/
+bert_qa_quality_model/
