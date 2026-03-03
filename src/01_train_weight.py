@@ -4,7 +4,7 @@ import os
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import MinMaxScaler
 
-from functions.functions import advanced_clean, calc_entropy, calc_num_density, calc_relevance, calc_sentiment, get_time_diff
+from utils.functions import advanced_clean, calc_entropy, calc_num_density, calc_relevance, calc_sentiment, get_time_diff
 
 # 动态拼接模板文件路径
 current_dir = os.path.dirname(os.path.abspath(__file__))
