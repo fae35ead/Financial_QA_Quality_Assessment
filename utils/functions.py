@@ -7,35 +7,43 @@ from datetime import datetime
 import os
 
 # === 1. 加载停用词 ===
-def get_stopwords(file_path='scu_stopwords.txt'):
+import os
+
+
+def get_stopwords(file_name='scu_stopwords.txt'):
     base_stopwords = set()
+
+    # 1. 动态定位：获取当前文件 (functions.py) 的目录，再推导到项目根目录
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(current_dir)
+
+    # 2. 拼接出目标停用词表的绝对路径
+    file_path = os.path.join(project_root, 'data', 'others', '停用词词表', file_name)
+
     try:
+        # 直接判断这一个绝对路径是否存在即可，不需要再写 elif 猜路径了
         if os.path.exists(file_path):
             with open(file_path, 'r', encoding='utf-8') as f:
                 for line in f:
                     word = line.strip()
                     if word:
                         base_stopwords.add(word)
-            print(f"已加载停用词:{len(base_stopwords)} 个")
-        elif os.path.exists(os.path.join('停用词词表', file_path)):
-             with open(os.path.join('停用词词表', file_path), 'r', encoding='utf-8') as f:
-                for line in f:
-                    word = line.strip()
-                    if word:
-                        base_stopwords.add(word)
-             print(f"已加载停用词:{len(base_stopwords)} 个")
+            print(f"成功加载本地停用词表，共 {len(base_stopwords)} 个词。")
         else:
-            # 可以在这里尝试硬编码一些常见停用词，防止空集合
-            pass
+            print(f"未找到停用词文件，路径为 {file_path}")
+
     except Exception as e:
         print(f"加载停用词失败: {e}")
-        base_stopwords = set()
 
-    # 领域特定客套话
+    # 领域特定客套话 (金融/QA问答领域的特有停用词，这部分你写得非常好！)
     domain_stopwords = {'感谢', '关注', '您好', '谢谢', '提问', '投资者', '公司', '公告', '敬请', '注意', '风险',
                         '查阅', '请教', '请问', '尊敬', '董秘', '谢谢您', '感谢您', '你好', '关心', '支持', '不便'}
 
-    return base_stopwords.union(domain_stopwords)
+    # 将本地读取的停用词和代码里硬编码的停用词合并取并集
+    final_stopwords = base_stopwords.union(domain_stopwords)
+    print(f"合并特定客套话后，最终停用词库共 {len(final_stopwords)} 个词。\n")
+
+    return final_stopwords
 
 STOPWORDS = get_stopwords()
 
