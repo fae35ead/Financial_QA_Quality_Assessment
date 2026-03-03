@@ -1,11 +1,15 @@
 import pandas as pd
 import numpy as np
+import os
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import MinMaxScaler
 
-# 直接复用你现有的函数库
-from functions import *
+from functions.functions import advanced_clean, calc_entropy, calc_num_density, calc_relevance, calc_sentiment, get_time_diff
 
+# 动态拼接模板文件路径
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
+TEST_DATA_PATH = os.path.join(project_root, 'data', 'others', '随机抽取50个问答数据.xlsx')
 
 def train_and_get_weights(file_path):
     print("1. 正在读取人工打分数据集...")
@@ -93,8 +97,5 @@ def train_and_get_weights(file_path):
         direction = "正相关 ↗" if row['回归系数'] > 0 else "负相关 ↘"
         print(f"[{row['特征维度']:<10}] \t占比: {row['重要性占比 (%)']:>5.2f}% \t({direction})")
 
-
 if __name__ == "__main__":
-    # 指定你打好分的测试集文件路径
-    TEST_DATA_PATH = '随机抽取50个问答数据.xlsx'
     train_and_get_weights(TEST_DATA_PATH)

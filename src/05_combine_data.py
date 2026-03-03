@@ -1,9 +1,22 @@
 import pandas as pd
 import glob
+import os
 
-# 1. 一键读取你跑出来的 4 个 CSV 文件并合并
-# 以 'advanced_features_' 开头
-files = glob.glob('advanced_features_*.csv')
+# 1. 使用动态绝对路径寻找文件
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
+
+search_folder = os.path.join(project_root, 'data', 'processed')
+search_pattern = os.path.join(search_folder, 'advanced_features_*.csv')
+
+files = glob.glob(search_pattern)
+
+# 加一个安全拦截，防止再次出现空列表报错
+if len(files) == 0:
+    print(f"在路径 {search_pattern} 下没有找到任何文件！请检查文件到底存在哪了。")
+    exit()
+
+print(f"✅ 成功找到 {len(files)} 个文件，准备合并...")
 df_all = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
 
 print(f"成功合并 {len(files)} 个文件，总数据量：{len(df_all)} 条")
@@ -38,5 +51,6 @@ def label_quality(score):
 df_all['final_label'] = df_all['quality_score'].apply(label_quality)
 
 # 6. 保存为最终的全局大一统特征集
-df_all.to_csv('advanced_features_global_all.csv', index=False)
-print("全局打标完成！这才是工业级的一致性数据集！")
+output_path = os.path.join(project_root, 'data', 'processed', 'advanced_features_global_all.csv')
+df_all.to_csv(output_path, index=False, encoding='utf-8-sig')
+print(f"全局特征表已保存到 {output_path}，总数据量：{len(df_all)} 条")

@@ -2,14 +2,21 @@ import pandas as pd
 import numpy as np
 import re
 import jieba
+import os
 import math
 from datetime import datetime
-from functions import *
+
+from functions.functions import advanced_clean, calc_entropy, calc_num_density, calc_relevance, get_time_diff, label_quality_generic
 
 
 # === 4. 主处理流程 ===
 if __name__ == "__main__":
-    file_path = '用户与公司问答-2023.xlsx'
+    # 1. 动态定位：获取当前文件的目录，再推导到项目根目录
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(current_dir)
+
+    # 2. 拼接出目标数据的绝对路径
+    file_path = os.path.join(project_root, 'data', 'raw', '用户与公司问答-2010.xlsx')
     try:
         df = pd.read_excel(file_path)
     except:
@@ -42,8 +49,11 @@ if __name__ == "__main__":
 
     # --- 维度 3: 综合打分 (Heuristic Scoring) ---
     # 先进行归一化 (Min-Max Normalization) 以便加权
-    for col in ['entropy', 'num_density', 'len_a', 'relevance',]:
-        df[f'{col}_norm'] = (df[col] - df[col].min()) / (df[col].max() - df[col].min())
+    for col in ['entropy', 'num_density', 'len_a', 'relevance']:
+        min_val = df[col].min()
+        max_val = df[col].max()
+        # 加上 1e-9 防止除以 0
+        df[f'{col}_norm'] = (df[col] - min_val) / (max_val - min_val + 1e-9)
 
     # 时效性是越短越好，所以要反向归一化
     df['time_score'] = df['response_hours'].apply(lambda x: 100 if x < 0 else x)  # 处理异常
@@ -80,4 +90,7 @@ if __name__ == "__main__":
     print(df[df['final_label'] == 0]['clean_a'].head(3).values)
 
     # 保存带有特征和标签的数据，供后续分析
-    df.to_csv('advanced_features_2023.csv', index=False)
+    # 动态拼接输出路径，保持项目结构整洁
+    output_path = os.path.join(project_root, 'data', 'processed', 'advanced_features_2010.csv')
+    df.to_csv(output_path, index=False)
+    print(f"\n特征提取完毕！已保存至: {output_path}")

@@ -1,76 +1,146 @@
+import os
+os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
+import pandas as pd
 import torch
 import numpy as np
-from transformers import AutoModelForSequenceClassification, TrainingArguments, Trainer
+from datasets import Dataset
+from transformers import AutoModelForSequenceClassification, TrainingArguments, Trainer, AutoTokenizer
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"🔥 当前炼丹炉已连接至: {device.type.upper()} !!!")
-if device.type != 'cuda':
-    print("⚠️ 警告：没有检测到 GPU！如果坚持训练可能需要几天几夜。请检查右上角资源类型。")
+# ==========================================
+# 0. 动态获取绝对路径
+# ==========================================
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
 
-# 1. 加载带有一个分类头（Classification Head）的预训练 BERT 模型
-# num_labels=3 代表我们有 0, 1, 2 三个类别
-print("正在下载 BERT 模型权重 (大概需要几百MB)...")
-model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=3)
+# 之前切分好的数据集路径
+train_path = os.path.join(project_root, 'data', 'processed', 'train_dataset.csv')
+valid_path = os.path.join(project_root, 'data', 'processed', 'valid_dataset.csv')
+test_path = os.path.join(project_root, 'data', 'processed', 'test_dataset.csv')
 
-# 2. 定义评估函数：在每个 Epoch 结束后，考考模型学得怎么样
+# 模型检查点和最终模型的保存路径
+checkpoint_dir = os.path.join(project_root, 'models', 'bert_checkpoints')
+final_model_dir = os.path.join(project_root, 'models', 'final_bert_qa_model')
+
+# ==========================================
+# 1. 初始化模型基座与分词器
+# ==========================================
+MODEL_NAME = "bert-base-chinese"
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+
+# ==========================================
+# 2. 数据集加载与处理函数
+# ==========================================
+def load_hf_dataset(file_path):
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"找不到数据文件：{file_path}，请确认是否已运行切分脚本。")
+    df = pd.read_csv(file_path)
+    df = df[['model_input', 'final_label']]
+    df = df.rename(columns={'final_label': 'label'})
+    return Dataset.from_pandas(df)
+
+def tokenize_function(examples):
+    return tokenizer(
+        examples["model_input"],
+        padding="max_length",
+        truncation=True,
+        max_length=256
+    )
+
 def compute_metrics(eval_pred):
     logits, labels = eval_pred
-    # logits 是模型输出的概率分布，我们取最大概率的索引作为预测类别
     predictions = np.argmax(logits, axis=-1)
-
-    # 计算精确率、召回率、F1和准确率 (macro代表对三个类别求平均)
     precision, recall, f1, _ = precision_recall_fscore_support(labels, predictions, average='macro', zero_division=0)
     acc = accuracy_score(labels, predictions)
-    return {
-        'accuracy': acc,
-        'f1': f1,
-        'precision': precision,
-        'recall': recall
-    }
+    return {'accuracy': acc, 'f1': f1, 'precision': precision, 'recall': recall}
 
-# 3. 核心调参区：定义训练参数 (TrainingArguments)
-training_args = TrainingArguments(
-    output_dir='./bert_qa_quality_model',
-    eval_strategy="epoch",                # 顺应最新版本的参数名
-    save_strategy="epoch",
-    learning_rate=2e-5,
-    per_device_train_batch_size=16,
-    per_device_eval_batch_size=32,
-    num_train_epochs=3,
-    weight_decay=0.01,
-    load_best_model_at_end=True,
-    metric_for_best_model="accuracy",
-    logging_dir='./logs',
-    logging_steps=100,
-    save_total_limit=2,
-    fp16=True,  # 开启半精度混合训练，显存减半，速度翻倍
-)
+# ==========================================
+# 3. 主执行模块 (包含数据管道打通与模型训练)
+# ==========================================
+if __name__ == '__main__':
+    # --- A. 数据管道处理 ---
+    print("正在加载数据集...")
+    train_dataset = load_hf_dataset(train_path)
+    valid_dataset = load_hf_dataset(valid_path)
+    test_dataset = load_hf_dataset(test_path)
+    print(f"训练集规模: {len(train_dataset)} 条")
 
+    # 小样本调试模式开关 (Dry Run)
+    DEBUG_MODE = True  # 跑全量数据时，将这里改为 False
+    DEBUG_SAMPLE_SIZE = 100000  # 假设只抽 100000 条训练集用来验证模型能否跑通
 
-# 4. 组装终极训练器 (Trainer)
-trainer = Trainer(
-    model=model,
-    args=training_args,
-    train_dataset=tokenized_train,        # 喂入 8 万条训练数据
-    eval_dataset=tokenized_valid,         # 喂入验证集进行期中考试
-    compute_metrics=compute_metrics,      # 告诉模型怎么算分
-)
+    if DEBUG_MODE:
+        print(f"\n[⚠️ 调试模式已开启] 正在截取极小部分数据用于快速验证...")
+        # 1.截取训练集 (取设定大小与实际长度的较小值，防越界)
+        train_dataset = train_dataset.select(range(min(DEBUG_SAMPLE_SIZE, len(train_dataset))))
 
-# 5. 🚀 正式点火！开始训练
-print("🚀 点火！开始训练 BERT 大模型...")
-trainer.train()
+        # 2.验证集和测试集也按比例缩小 (比如取训练集的十分之一)
+        eval_size = max(1, DEBUG_SAMPLE_SIZE // 10)
+        valid_dataset = valid_dataset.select(range(min(eval_size, len(valid_dataset))))
+        test_dataset = test_dataset.select(range(min(eval_size, len(test_dataset))))
 
-# 6. 🏆 训练结束后，在从未见过的测试集上进行最终考试
-print("🏆 训练完成！正在测试集上进行最终评估...")
-test_results = trainer.evaluate(tokenized_test)
-print(f"最终测试集准确率 (Accuracy): {test_results['eval_accuracy']:.4f}")
+        print(f"-> 缩小后规模 | 训练集: {len(train_dataset)} | 验证集: {len(valid_dataset)} | 测试集: {len(test_dataset)}\n")
 
-# 7. 导出最终模型
-final_model_path = "./final_bert_qa_quality_model"
-print(f"正在将最佳模型导出至：{final_model_path}")
-# 保存模型权重和配置文件
-trainer.save_model(final_model_path)
-# 必须同步保存 tokenizer，否则以后加载模型时会由于词表不匹配报错
-tokenizer.save_pretrained(final_model_path)
-print("✅ 模型持久化保存完成。你可以直接下载这个文件夹用于后续推理。")
+    print("正在对数据进行 Tokenize 处理 (这可能需要几十秒)...")
+    tokenized_train = train_dataset.map(tokenize_function, batched=True)
+    tokenized_valid = valid_dataset.map(tokenize_function, batched=True)
+    tokenized_test = test_dataset.map(tokenize_function, batched=True)
+
+    columns_to_remove = ["model_input"]
+    tokenized_train = tokenized_train.remove_columns(columns_to_remove)
+    tokenized_valid = tokenized_valid.remove_columns(columns_to_remove)
+    tokenized_test = tokenized_test.remove_columns(columns_to_remove)
+
+    tokenized_train.set_format("torch")
+    tokenized_valid.set_format("torch")
+    tokenized_test.set_format("torch")
+    print("✅ 数据管道打通！准备喂给模型。")
+
+    # --- B. 硬件检测与模型加载 ---
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"\n🔥 当前炼丹炉已连接至: {device.type.upper()} !!!")
+    if device.type != 'cuda':
+        print("⚠️ 警告：没有检测到 GPU！训练可能极其缓慢。")
+
+    print("正在下载并加载 BERT 模型结构...")
+    model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=3)
+
+    # --- C. 核心调参区 (专为本地 GPU 优化) ---
+    training_args = TrainingArguments(
+        output_dir=checkpoint_dir,
+        eval_strategy="epoch",
+        save_strategy="epoch",
+        learning_rate=2e-5,
+        per_device_train_batch_size=8,      # 减小单次输入，防止 OOM
+        per_device_eval_batch_size=16,
+        gradient_accumulation_steps=2,      # 梯度累加，等效 Batch Size = 16
+        num_train_epochs=3,
+        weight_decay=0.01,
+        load_best_model_at_end=True,
+        metric_for_best_model="accuracy",
+        logging_steps=50,
+        save_total_limit=2,
+        fp16=True,                          # 开启半精度混合训练
+    )
+
+    # --- D. 组装 Trainer 并启动 ---
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=tokenized_train,
+        eval_dataset=tokenized_valid,
+        compute_metrics=compute_metrics,
+    )
+
+    print("\n🚀 点火！开始训练 QA 质量评估模型...")
+    trainer.train()
+
+    # --- E. 验收与持久化 ---
+    print("\n🏆 训练完成！正在测试集上进行最终评估...")
+    test_results = trainer.evaluate(tokenized_test)
+    print(f"最终测试集准确率 (Accuracy): {test_results['eval_accuracy']:.4f}")
+
+    print(f"\n正在将最佳模型和词表导出至：{final_model_dir}")
+    trainer.save_model(final_model_dir)
+    tokenizer.save_pretrained(final_model_dir)
+    print("✅ 模型持久化保存完成。随时可以调用推理！")
