@@ -3,12 +3,12 @@ import numpy as np
 import re
 import jieba
 import math
+from collections import Counter
 from datetime import datetime
 import os
 
 # === 1. 加载停用词 ===
 import os
-
 
 def get_stopwords(file_name='scu_stopwords.txt'):
     base_stopwords = set()
@@ -55,24 +55,24 @@ def advanced_clean(text):
     return text
 
 # === 3. 学术级特征计算函数 ===
-
 # 信息熵计算：衡量回答内容的多样性和信息量
 def calc_entropy(text):
+    # 1. 分词与过滤
     words = [w for w in jieba.cut(text) if w not in STOPWORDS and len(w) > 1]
-    if not words: return 0
-    data_set = list(set(words))
-    freq_list = []
-    for entry in data_set:
-        counter = 0.0
-        for word in words:
-            if word == entry:
-                counter += 1
-        freq_list.append(counter)
 
+    total_words = len(words)
+    if total_words == 0:
+        return 0.0
+
+    # 2. O(N) 极速统计词频
+    word_counts = Counter(words)
+
+    # 3. 计算香农信息熵: H = - sum(p * log2(p))
     entropy = 0.0
-    for freq in freq_list:
-        p = freq / len(words)
-        entropy -= p * math.log(p, 2)
+    for count in word_counts.values():
+        p = count / total_words
+        entropy -= p * math.log2(p)
+
     return entropy
 
 # 数字密度计算：衡量回答中数字信息的丰富程度

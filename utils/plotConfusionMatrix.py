@@ -32,8 +32,13 @@ print("正在加载最佳模型和分词器...")
 tokenizer = AutoTokenizer.from_pretrained(final_model_dir)
 model = AutoModelForSequenceClassification.from_pretrained(final_model_dir)
 
-print("正在读取 10,000 条测试集数据...")
+print("正在读取全量测试集数据...")
 df_test = pd.read_csv(test_path)
+
+# 截取前 10,000 条，与训练时的规模对齐
+df_test = df_test.head(10000)
+
+print(f"已成功截取 {len(df_test)} 条独立测试集数据，准备进行张量化映射。")
 df_test = df_test[['model_input', 'final_label']].rename(columns={'final_label': 'label'})
 test_dataset = Dataset.from_pandas(df_test)
 
