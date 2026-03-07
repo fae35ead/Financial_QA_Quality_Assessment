@@ -1,3 +1,9 @@
+'''该文件负责从原始数据文件夹中读取所有 Excel 文件，合并成一个 DataFrame，并进行清洗处理。清洗步骤包括：
+1. 剔除空回答：删除 'Reply' 或 'Qsubj' 列中有空值的行。
+2. 剔除时间错乱数据：如果 'Qtm' 和 'Recvtm' 列存在，删除 'Recvtm' 早于 'Qtm' 的行。
+3. 向量化文本清洗：使用 pandas 的字符串方法批量去除 'Reply' 和 'Qsubj' 列中的 HTML 标签和多余空白字符。
+清洗完成后，数据将被保存为 CSV 格式，以突破 Excel 104万行的限制。'''
+
 import os
 import pandas as pd
 

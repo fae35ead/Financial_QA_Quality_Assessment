@@ -1,3 +1,10 @@
+'''该文件实现了一个工业级的 LCPPN 推理管线，能够对公司财报问答进行智能分析和分类。核心功能包括：
+1. 加载预训练的三大模型（根节点模型、Direct 子节点模型、Evasive 子节点模型），并将它们部署在 GPU 上以实现高速推理。
+2. 端到端的分析接口 `analyze_qa`，输入投资者提问和董秘回答，输出根节点和子节点的分类结果以及对应的置信度。
+3. 置信度保底机制：如果根节点的置信度过低，系统会自动发出预警，提示该问答可能超出常规金融语境，建议人工复核。
+4. 实战演练：在 `__main__` 块中，注入了三个精心设计的测试用例，涵盖了“战略性模糊+推迟回答”、“财务表现直接回答”和“外部归因”三种典型场景，展示了 LCPPN 在实际应用中的强大分析能力和细致的分类结果。
+'''
+
 import os
 import torch
 import torch.nn.functional as F
@@ -10,7 +17,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(current_dir, "../"))
 
 # 我们精心打磨的三大主力模型路径
-ROOT_MODEL_DIR = os.path.join(project_root, "models", "student_distilbert")
+ROOT_MODEL_DIR = os.path.join(project_root, "models", "student_100k_distilbert")
 DIRECT_MODEL_DIR = os.path.join(project_root, "models", "lcppn_direct_classifier")
 EVASIVE_MODEL_DIR = os.path.join(project_root, "models", "lcppn_evasive_classifier")
 

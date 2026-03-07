@@ -1,3 +1,6 @@
+'''该文件实现了一个完整的蒸馏训练流程，使用 Hugging Face 的 Transformers 库来训练一个 Student 模型（DistilBERT），以模仿一个 Teacher 模型（如 BERT）的输出分布。
+核心在于自定义 Trainer 来计算 KL 散度损失，使 Student 学习 Teacher 的软标签知识。整个流程包括数据加载、划分、编码、模型初始化、训练和保存。'''
+
 import os
 import torch
 import torch.nn as nn
@@ -14,8 +17,8 @@ from transformers import (
 )
 
 # ================= 配置区 =================
-INPUT_FILE = "../data/processed/soft_labeled_20k.csv"
-OUTPUT_DIR = "../models/student_distilbert"
+INPUT_FILE = "../data/processed/soft_labeled_100k.csv"
+OUTPUT_DIR = "../models/student_100k_distilbert"
 
 MODEL_NAME = r"F:\软件\学习相关\PycharmProjects\QA\models\pretrained_models\distilbert-base-zh-cased"
 
@@ -57,7 +60,7 @@ class DistillationTrainer(Trainer):
 
 
 def main():
-    print("1. 正在加载带软标签的 2 万条蒸馏数据...")
+    print("1. 正在加载带软标签的 10 万条蒸馏数据...")
     df = pd.read_csv(INPUT_FILE)
 
     # 划分训练集 (90%) 和验证集 (10%)

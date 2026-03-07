@@ -1,5 +1,8 @@
-# 该文件负责训练 LCPPN 的两个核心子节点分类器：Direct-5 分类财务节点和 Evasive-4 分类战术节点。
-# 训练过程中，我们将真实数据和合成数据进行隔离处理：真实数据仅用于构建纯洁的验证集，而合成数据则全部混入训练集以增强模型的泛化能力。
+'''该文件负责 LCPPN 的子节点分类器训练，包含 Direct-5 分类财务节点和 Evasive-4 分类战术节点两个分支。核心亮点在于：
+1. 数据增强隔离：合成数据只混入训练集，验证集保持纯洁的真实数据，确保模型评估的真实性和可靠性。
+2. Focal Loss 定制 Trainer：针对类别不平衡问题，定制了 Focal Loss 版本的 Trainer，提升模型对少数类的学习能力。
+3. 训练结束即考试：训练完成后，立即在纯真实验证集上进行评测，输出详细的分类报告，确保模型的实战表现符合预期。
+'''
 
 import os
 import torch
@@ -23,7 +26,7 @@ SYNTHETIC_DATA_FILE = "../data/processed/synthetic_augmented_samples.csv"
 
 # 绝对路径黑科技（防 FileNotFoundError）
 current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.abspath(os.path.join(current_dir, "../../"))
+project_root = os.path.abspath(os.path.join(current_dir, "../"))
 
 OUTPUT_DIR_DIRECT = os.path.join(project_root, "models", "lcppn_direct_classifier")
 OUTPUT_DIR_EVASIVE = os.path.join(project_root, "models", "lcppn_evasive_classifier")

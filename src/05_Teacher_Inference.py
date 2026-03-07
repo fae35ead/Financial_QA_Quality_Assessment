@@ -1,3 +1,5 @@
+'''该文件的主要功能是使用之前训练好的 Teacher 模型对全量无标签数据进行推理，生成软标签（概率分布），并将这些软标签与原始数据合并保存为新的 CSV 文件，为后续的学生模型训练提供丰富的监督信号。'''
+
 import os
 import torch
 import pandas as pd
@@ -9,10 +11,10 @@ from tqdm import tqdm
 # ================= 配置区 =================
 # 这里填你之前清洗好的、包含70万条问答的全量数据文件路径
 UNLABELED_DATA_FILE = "../data/processed/stage2_entropy_calculated_data.csv"
-OUTPUT_FILE = "../data/processed/soft_labeled_20k.csv"
+OUTPUT_FILE = "../data/processed/soft_labeled_100k.csv"
 TEACHER_MODEL_DIR = "../models/teacher_cross_encoder"  # 刚才训练好的模型路径
 
-SAMPLE_SIZE = 20000  # 只采用2w条数据进行蒸馏，提升速度、降低资源占用
+SAMPLE_SIZE = 100000  # 100k数据进行蒸馏，提升速度、降低资源占用
 MAX_LEN = 384  # 和训练时保持一致
 BATCH_SIZE = 32  # 纯推理不计算梯度，RTX 2070S (8GB) 开到 32 甚至 64 毫无压力
 

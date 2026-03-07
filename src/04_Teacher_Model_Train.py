@@ -1,3 +1,7 @@
+'''该文件负责使用金标准数据微调一个强大的 Teacher 模型（Cross-Encoder），为后续的 Student 模型提供高质量的软标签。
+我们将使用 HuggingFace 的 Transformers 库，基于中文 RoBERTa-wwm-ext 预训练模型进行微调。整个过程包括数据加载、清洗、划分、编码、模型初始化、训练和保存。
+最终输出一个微调好的 Teacher 模型，能够在后续的蒸馏阶段为 Student 模型提供准确的预测分布。'''
+
 import os
 import pandas as pd
 import numpy as np

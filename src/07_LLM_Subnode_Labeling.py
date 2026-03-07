@@ -1,3 +1,8 @@
+'''该文件用于解决类别数据不平衡问题，引入LLM进行二次细分打标。
+对于根节点标签为 Direct (0) 和 Evasive (2) 的样本，我们将分别使用针对性的 Prompt 进行更细粒度的子分类，以丰富数据的多样性和层次感。
+Intermediate (1) 的样本由于其本身就具有模糊性，我们暂不进行细分，直接标记为“部分响应(不细分)”即可。
+Evasive (2) 的子分类将基于 EvasionBench 的权威分类体系，帮助我们更深入地理解董秘的逃避战术类型，这对于后续模型训练和实际应用都有重要价值。'''
+
 import pandas as pd
 import json
 import asyncio
