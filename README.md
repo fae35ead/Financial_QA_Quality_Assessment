@@ -40,6 +40,7 @@
 │   └── processed/              # 清洗与 LLM 标注后的高质量流转数据 (需运行脚本生成)
 ├── models/                     # 模型权重目录
 ├── notebooks/                  # 数据分析与实验记录
+│   ├── evaluation/             # 两个不同数据规模训练的学生模型比较
 │   ├── 00_Rejected_Cases_Analysis.ipynb
 │   ├── 01_Model_Evaluation.ipynb    # [WIP] 学生模型性能与混淆矩阵评估
 │   └── 02_Bad_Case_Analysis.ipynb   # [WIP] 错题本与主动学习 (Active Learning) 闭环分析
