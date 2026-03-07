@@ -16,7 +16,8 @@
 * **半监督知识蒸馏 (Knowledge Distillation)**：利用 LLM (Claude-Opus) 构建零样本 CoT 金标准，训练 1.1 亿参数的 Teacher 模型输出海量“软标签（Soft Labels）”。最终蒸馏出速度翻倍、且 Macro-F1 强势突破 **0.767** 的轻量级 Student 模型 (DistilBERT)。
 * **LCPPN 层级路由架构**：(Local Classifier Per Parent Node) 动态路由分类树，将极其复杂的意图识别解耦为 Root 宏观路由与多个 Sub-node 领域专家分类器。
 * **Train-Val 绝对隔离的数据增强**：针对极少数类样本（如“外部归因”），运用 LLM 进行场景泛化，在绝对不污染验证集真实分布的前提下，抹平极端长尾效应。
-![Uploading pipeline.png…]()
+
+![LCPPN系统流程图](notebooks/pipeline.png)
 
 ## 🏗️ 核心架构 (LCPPN)
 
