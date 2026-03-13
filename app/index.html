@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LCPPN 金融问答质量分析雷达</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* 添加一个简单的脉冲动画用于警告提示 */
+      @keyframes pulse-border {
+        0% { border-color: #ef4444; }
+        50% { border-color: #fca5a5; }
+        100% { border-color: #ef4444; }
+      }
+      .animate-warning { animation: pulse-border 2s infinite; }
+    </style>
+  </head>
+  <body class="min-h-screen bg-slate-50 text-slate-800 font-sans">
+    <div class="max-w-6xl mx-auto px-4 py-10">
+      <header class="mb-8 border-b border-slate-200 pb-6">
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+          <div class="h-10 w-2 bg-blue-600 rounded-full"></div>
+          <h1 class="text-3xl font-bold tracking-tight text-slate-900">A股董秘话术智能分析系统</h1>
+          </div>
+          <a href="review.html" class="text-sm text-blue-600 hover:underline">进入复核工作台</a>
+        </div>
+        <p class="mt-3 text-slate-500 ml-5">
+          基于 LCPPN (Local Classifier Per Parent Node) 架构构建。支持深层财务质量诊断与逃避战术鉴定。
+        </p>
+      </header>
+
+      <main class="space-y-6">
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+          <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 transition hover:shadow-md">
+            <h2 class="text-lg font-semibold mb-3 flex items-center text-slate-700">
+              <svg class="w-5 h-5 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+              投资者提问
+            </h2>
+            <textarea id="question" rows="6" class="w-full rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 p-4 text-sm resize-none" placeholder="输入投资者的真实提问..."></textarea>
+          </div>
+
+          <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 transition hover:shadow-md">
+            <h2 class="text-lg font-semibold mb-3 flex items-center text-slate-700">
+              <svg class="w-5 h-5 mr-2 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path></svg>
+              董秘官方回答
+            </h2>
+            <textarea id="answer" rows="6" class="w-full rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 p-4 text-sm resize-none" placeholder="输入董秘的官方回复..."></textarea>
+          </div>
+        </section>
+
+        <section class="flex flex-col sm:flex-row items-center justify-between bg-white rounded-2xl shadow-sm border border-slate-200 p-4 px-6">
+          <p id="errorMsg" class="text-sm text-red-600 font-medium hidden"></p>
+          <div class="flex-grow"></div>
+          <button id="evaluateBtn" class="w-full sm:w-auto bg-slate-900 hover:bg-blue-600 text-white font-medium py-3 px-8 rounded-xl transition duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
+            启动 LCPPN 深度诊断
+          </button>
+        </section>
+
+        <section id="resultArea" class="hidden space-y-4">
+
+          <div id="warningBanner" class="hidden bg-red-50 border-l-4 border-red-500 p-4 rounded-r-xl shadow-sm">
+            <div class="flex">
+              <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+              </div>
+              <div class="ml-3">
+                <p id="warningText" class="text-sm text-red-700 font-medium"></p>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div id="rootCard" class="relative bg-white rounded-2xl p-6 border-2 transition-all duration-500">
+              <div class="absolute -top-3 -left-3 bg-slate-900 text-white text-xs font-bold px-3 py-1 rounded-lg shadow-sm">Level 1: 宏观语用路由</div>
+              <div class="flex justify-between items-start mt-2">
+                <div>
+                  <p class="text-sm text-slate-500 font-medium uppercase tracking-wider mb-1">根节点判定</p>
+                  <h3 id="rootLabel" class="text-2xl font-bold text-slate-800"></h3>
+                </div>
+                <div class="text-right">
+                  <p class="text-xs text-slate-400 font-medium uppercase mb-1">模型置信度</p>
+                  <span id="rootConfidence" class="inline-block px-3 py-1 bg-slate-100 text-slate-700 font-bold rounded-lg text-lg"></span>
+                </div>
+              </div>
+            </div>
+
+            <div id="subCard" class="relative bg-white rounded-2xl p-6 border-2 transition-all duration-500">
+              <div class="absolute -top-3 -left-3 bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-lg shadow-sm">Level 2: 细分领域诊断</div>
+              <div class="flex justify-between items-start mt-2">
+                <div>
+                  <p class="text-sm text-slate-500 font-medium uppercase tracking-wider mb-1">叶子节点标签</p>
+                  <h3 id="subLabel" class="text-2xl font-bold text-slate-800"></h3>
+                </div>
+                <div class="text-right">
+                  <p class="text-xs text-slate-400 font-medium uppercase mb-1">模型置信度</p>
+                  <span id="subConfidence" class="inline-block px-3 py-1 bg-slate-100 text-slate-700 font-bold rounded-lg text-lg"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+
+    <script>
+      const API_BASE = "http://127.0.0.1:8000";
+
+      const questionEl = document.getElementById("question");
+      const answerEl = document.getElementById("answer");
+      const btnEl = document.getElementById("evaluateBtn");
+      const errorMsgEl = document.getElementById("errorMsg");
+
+      const resultArea = document.getElementById("resultArea");
+      const rootCard = document.getElementById("rootCard");
+      const subCard = document.getElementById("subCard");
+      const warningBanner = document.getElementById("warningBanner");
+      const warningText = document.getElementById("warningText");
+
+      // 动态获取卡片主题色
+      function getThemeStyles(rootId) {
+        if (rootId === 0) { // Direct
+          return { rootClass: "border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.2)]", subClass: "border-emerald-200", textClass: "text-emerald-700" };
+        } else if (rootId === 2) { // Evasive
+          return { rootClass: "border-rose-400 shadow-[0_0_15px_rgba(251,113,133,0.2)]", subClass: "border-rose-200", textClass: "text-rose-700" };
+        } else if (rootId === 1) { // Intermediate
+          return { rootClass: "border-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.2)]", subClass: "border-slate-200 opacity-60", textClass: "text-amber-700" };
+        } else { // 拦截 (-1)
+          return { rootClass: "border-slate-400 shadow-[0_0_15px_rgba(148,163,184,0.2)]", subClass: "border-slate-200 opacity-60", textClass: "text-slate-600" };
+        }
+      }
+
+      btnEl.addEventListener("click", async () => {
+        const question = questionEl.value.trim();
+        const answer = answerEl.value.trim();
+
+        errorMsgEl.classList.add("hidden");
+        resultArea.classList.add("hidden");
+        warningBanner.classList.add("hidden");
+
+        if (!question || !answer) {
+          errorMsgEl.textContent = "提问与回答不可为空！";
+          errorMsgEl.classList.remove("hidden");
+          return;
+        }
+
+        btnEl.disabled = true;
+        btnEl.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 分析中...`;
+
+        try {
+          const resp = await fetch(`${API_BASE}/api/evaluate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ question, answer }),
+          });
+
+          if (!resp.ok) {
+            throw new Error("模型引擎未响应，请检查后端 FastAPI 是否启动。");
+          }
+
+          const data = await resp.json();
+
+          // 渲染警告
+          if (data.warning) {
+            warningText.textContent = data.warning;
+            warningBanner.classList.remove("hidden");
+            rootCard.classList.add("animate-warning");
+          } else {
+            rootCard.classList.remove("animate-warning");
+          }
+
+          // 渲染主题色
+          const theme = getThemeStyles(data.root_id);
+          rootCard.className = `relative bg-white rounded-2xl p-6 border-2 transition-all duration-500 ${theme.rootClass}`;
+          subCard.className = `relative bg-white rounded-2xl p-6 border-2 transition-all duration-500 ${theme.subClass}`;
+
+          // 填充数据
+          document.getElementById("rootLabel").textContent = data.root_label;
+          document.getElementById("rootLabel").className = `text-2xl font-bold ${theme.textClass}`;
+          document.getElementById("rootConfidence").textContent = data.root_confidence + "%";
+
+          document.getElementById("subLabel").textContent = data.sub_label;
+          document.getElementById("subConfidence").textContent = data.sub_confidence + "%";
+
+          // 展开结果区
+          resultArea.classList.remove("hidden");
+
+        } catch (error) {
+          errorMsgEl.textContent = error.message;
+          errorMsgEl.classList.remove("hidden");
+        } finally {
+          btnEl.disabled = false;
+          btnEl.innerHTML = "启动 LCPPN 深度诊断";
+        }
+      });
+    </script>
+  </body>
+</html>

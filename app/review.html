@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>低置信度复核工作台</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="min-h-screen bg-slate-100 text-slate-800">
+    <div class="max-w-7xl mx-auto p-6 space-y-4">
+      <header class="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between">
+        <div>
+          <h1 class="text-2xl font-bold">低置信度复核工作台</h1>
+          <p class="text-sm text-slate-500">流程：待复核队列 -> 请求 Agent 建议 -> 人工确认/修改 -> 回流训练集</p>
+        </div>
+        <a class="text-sm text-blue-600 hover:underline" href="index.html">返回分析页</a>
+      </header>
+
+      <section class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="lg:col-span-1 bg-white rounded-xl border border-slate-200 p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="font-semibold">待复核队列</h2>
+            <button id="refreshBtn" class="text-xs px-3 py-1 rounded bg-slate-900 text-white">刷新</button>
+          </div>
+          <div id="queueList" class="space-y-2 max-h-[620px] overflow-y-auto"></div>
+        </div>
+
+        <div class="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-4 space-y-4">
+          <div class="flex items-center justify-between">
+            <h2 class="font-semibold">样本详情复核</h2>
+            <span id="detailStatus" class="text-xs px-2 py-1 rounded bg-slate-200 text-slate-700">未选择样本</span>
+          </div>
+
+          <div id="sampleBlock" class="grid grid-cols-1 gap-3 text-sm">
+            <div><span class="font-semibold">问题：</span><span id="questionText">-</span></div>
+            <div><span class="font-semibold">回答：</span><span id="answerText">-</span></div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div class="border border-slate-200 rounded-lg p-3">
+              <h3 class="font-semibold mb-2 text-slate-700">模型结论</h3>
+              <p class="text-sm">Root: <span id="modelRoot">-</span></p>
+              <p class="text-sm">Sub: <span id="modelSub">-</span></p>
+              <p class="text-sm">置信度: <span id="modelConf">-</span></p>
+            </div>
+            <div class="border border-slate-200 rounded-lg p-3">
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="font-semibold text-slate-700">Agent 建议</h3>
+                <button id="askAgentBtn" class="text-xs px-2 py-1 rounded bg-indigo-600 text-white disabled:bg-slate-300" disabled>
+                  请求建议
+                </button>
+              </div>
+              <p class="text-sm">Root: <span id="agentRoot">-</span></p>
+              <p class="text-sm">Sub: <span id="agentSub">-</span></p>
+              <p class="text-sm">置信度: <span id="agentConf">-</span></p>
+              <p class="text-xs text-slate-500 mt-2" id="agentReason">-</p>
+            </div>
+            <div class="border border-slate-200 rounded-lg p-3">
+              <h3 class="font-semibold mb-2 text-slate-700">人工最终结果</h3>
+              <div class="space-y-2">
+                <select id="humanRoot" class="w-full border border-slate-300 rounded p-1 text-sm"></select>
+                <select id="humanSub" class="w-full border border-slate-300 rounded p-1 text-sm"></select>
+                <input id="humanConfidence" type="number" min="0" max="1" step="0.01" class="w-full border border-slate-300 rounded p-1 text-sm" placeholder="人工置信度(0-1)" />
+                <textarea id="humanNote" rows="2" class="w-full border border-slate-300 rounded p-1 text-sm" placeholder="备注"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-end gap-2">
+            <span id="opMsg" class="text-sm text-slate-600"></span>
+            <button id="submitBtn" class="px-4 py-2 rounded bg-emerald-600 text-white disabled:bg-slate-300" disabled>提交复核结果</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      const API_BASE = "http://127.0.0.1:8000";
+      const ROOT_OPTIONS = [
+        "Direct (直接响应)",
+        "Intermediate (避重就轻)",
+        "Evasive (打太极)",
+      ];
+      const SUB_OPTIONS = {
+        "Direct (直接响应)": ["资本运作与并购", "技术与研发进展", "产能与项目规划", "合规与风险披露", "财务表现指引"],
+        "Intermediate (避重就轻)": ["无下游细分 (部分响应)"],
+        "Evasive (打太极)": ["推迟回答", "转移话题", "战略性模糊", "外部归因"],
+      };
+
+      let currentSampleId = null;
+
+      const queueList = document.getElementById("queueList");
+      const refreshBtn = document.getElementById("refreshBtn");
+      const askAgentBtn = document.getElementById("askAgentBtn");
+      const submitBtn = document.getElementById("submitBtn");
+      const detailStatus = document.getElementById("detailStatus");
+      const opMsg = document.getElementById("opMsg");
+
+      const questionText = document.getElementById("questionText");
+      const answerText = document.getElementById("answerText");
+      const modelRoot = document.getElementById("modelRoot");
+      const modelSub = document.getElementById("modelSub");
+      const modelConf = document.getElementById("modelConf");
+      const agentRoot = document.getElementById("agentRoot");
+      const agentSub = document.getElementById("agentSub");
+      const agentConf = document.getElementById("agentConf");
+      const agentReason = document.getElementById("agentReason");
+
+      const humanRoot = document.getElementById("humanRoot");
+      const humanSub = document.getElementById("humanSub");
+      const humanConfidence = document.getElementById("humanConfidence");
+      const humanNote = document.getElementById("humanNote");
+
+      function initRootOptions() {
+        humanRoot.innerHTML = ROOT_OPTIONS.map((x) => `<option value="${x}">${x}</option>`).join("");
+        refreshSubOptions();
+      }
+
+      function refreshSubOptions() {
+        const root = humanRoot.value;
+        const subs = SUB_OPTIONS[root] || [];
+        humanSub.innerHTML = subs.map((x) => `<option value="${x}">${x}</option>`).join("");
+      }
+
+      async function loadQueue() {
+        queueList.innerHTML = `<div class="text-sm text-slate-500">加载中...</div>`;
+        const resp = await fetch(`${API_BASE}/review/queue?page=1&page_size=50`);
+        if (!resp.ok) {
+          queueList.innerHTML = `<div class="text-sm text-red-600">队列加载失败</div>`;
+          return;
+        }
+        const data = await resp.json();
+        if (!data.items.length) {
+          queueList.innerHTML = `<div class="text-sm text-slate-500">暂无待复核样本</div>`;
+          return;
+        }
+        queueList.innerHTML = data.items.map((item) => `
+          <button data-id="${item.sample_id}" class="w-full text-left border border-slate-200 rounded p-2 hover:border-blue-400">
+            <div class="text-xs text-slate-500">${item.review_status}</div>
+            <div class="text-sm font-medium truncate">${item.question_text}</div>
+            <div class="text-xs text-slate-500 truncate">${item.layer1_label} / ${item.layer2_json.sub_label || "-"}</div>
+          </button>
+        `).join("");
+        queueList.querySelectorAll("button[data-id]").forEach((btn) => {
+          btn.addEventListener("click", () => loadDetail(btn.dataset.id));
+        });
+      }
+
+      async function loadDetail(sampleId) {
+        currentSampleId = sampleId;
+        askAgentBtn.disabled = false;
+        submitBtn.disabled = false;
+        detailStatus.textContent = `样本ID: ${sampleId}`;
+        opMsg.textContent = "";
+
+        const resp = await fetch(`${API_BASE}/review/${sampleId}`);
+        if (!resp.ok) {
+          opMsg.textContent = "详情加载失败";
+          return;
+        }
+        const data = await resp.json();
+        questionText.textContent = data.question_text;
+        answerText.textContent = data.answer_text;
+        modelRoot.textContent = data.model_output.layer1_label;
+        modelSub.textContent = data.model_output.layer2_json.sub_label || "-";
+        modelConf.textContent = `${data.model_output.layer1_confidence}% / ${data.model_output.layer2_json.sub_confidence || 0}%`;
+
+        agentRoot.textContent = data.agent_suggestion?.root_label || "-";
+        agentSub.textContent = data.agent_suggestion?.sub_label || "-";
+        agentConf.textContent = data.agent_suggestion?.confidence ?? "-";
+        agentReason.textContent = data.agent_suggestion?.reason || "-";
+
+        humanRoot.value = data.human_annotation?.root_label || data.model_output.layer1_label;
+        refreshSubOptions();
+        humanSub.value = data.human_annotation?.sub_label || data.model_output.layer2_json.sub_label || humanSub.value;
+        humanConfidence.value = data.human_annotation?.annotator_confidence || "";
+        humanNote.value = data.human_annotation?.note || "";
+      }
+
+      async function requestAgentSuggestion() {
+        if (!currentSampleId) return;
+        askAgentBtn.disabled = true;
+        opMsg.textContent = "Agent 建议任务已提交，正在等待完成...";
+        const resp = await fetch(`${API_BASE}/review/${currentSampleId}/agent-suggestion`, { method: "POST" });
+        if (!resp.ok) {
+          opMsg.textContent = "Agent 任务提交失败";
+          askAgentBtn.disabled = false;
+          return;
+        }
+        const data = await resp.json();
+        pollJob(data.job_id);
+      }
+
+      async function pollJob(jobId) {
+        const timer = setInterval(async () => {
+          const resp = await fetch(`${API_BASE}/jobs/${jobId}`);
+          if (!resp.ok) return;
+          const data = await resp.json();
+          if (data.status === "completed") {
+            clearInterval(timer);
+            opMsg.textContent = "Agent 建议已生成";
+            askAgentBtn.disabled = false;
+            await loadDetail(currentSampleId);
+          } else if (data.status === "failed") {
+            clearInterval(timer);
+            opMsg.textContent = "Agent 建议生成失败";
+            askAgentBtn.disabled = false;
+          }
+        }, 1200);
+      }
+
+      async function submitAnnotation() {
+        if (!currentSampleId) return;
+        const payload = {
+          sample_id: currentSampleId,
+          root_label: humanRoot.value,
+          sub_label: humanSub.value,
+          note: humanNote.value,
+          annotator_id: "human_reviewer",
+          annotator_confidence: humanConfidence.value ? Number(humanConfidence.value) : null,
+        };
+        const resp = await fetch(`${API_BASE}/annotate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!resp.ok) {
+          const err = await resp.json();
+          opMsg.textContent = err.detail || "提交失败";
+          return;
+        }
+        const data = await resp.json();
+        opMsg.textContent = `提交成功，状态：${data.review_status}`;
+        await loadQueue();
+      }
+
+      humanRoot.addEventListener("change", refreshSubOptions);
+      refreshBtn.addEventListener("click", loadQueue);
+      askAgentBtn.addEventListener("click", requestAgentSuggestion);
+      submitBtn.addEventListener("click", submitAnnotation);
+
+      initRootOptions();
+      loadQueue();
+    </script>
+  </body>
+</html>

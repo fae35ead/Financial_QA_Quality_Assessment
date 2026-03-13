@@ -1,0 +1,64 @@
+{
+  "best_global_step": 78,
+  "best_metric": 0.5510263929618768,
+  "best_model_checkpoint": "F:\\\u8f6f\u4ef6\\\u5b66\u4e60\u76f8\u5173\\PycharmProjects\\QA\\models\\lcppn_direct_classifier\\checkpoint-78",
+  "epoch": 3.0,
+  "eval_steps": 500,
+  "global_step": 78,
+  "is_hyper_param_search": false,
+  "is_local_process_zero": true,
+  "is_world_process_zero": true,
+  "log_history": [
+    {
+      "epoch": 1.0,
+      "eval_accuracy": 0.2711864406779661,
+      "eval_f1_macro": 0.189010989010989,
+      "eval_loss": 2.206939458847046,
+      "eval_runtime": 0.2216,
+      "eval_samples_per_second": 266.214,
+      "eval_steps_per_second": 9.024,
+      "step": 26
+    },
+    {
+      "epoch": 2.0,
+      "eval_accuracy": 0.576271186440678,
+      "eval_f1_macro": 0.49437536148062466,
+      "eval_loss": 1.672005295753479,
+      "eval_runtime": 0.1425,
+      "eval_samples_per_second": 413.963,
+      "eval_steps_per_second": 14.033,
+      "step": 52
+    },
+    {
+      "epoch": 3.0,
+      "eval_accuracy": 0.6101694915254238,
+      "eval_f1_macro": 0.5510263929618768,
+      "eval_loss": 1.369198203086853,
+      "eval_runtime": 0.1825,
+      "eval_samples_per_second": 323.233,
+      "eval_steps_per_second": 10.957,
+      "step": 78
+    }
+  ],
+  "logging_steps": 500,
+  "max_steps": 130,
+  "num_input_tokens_seen": 0,
+  "num_train_epochs": 5,
+  "save_steps": 500,
+  "stateful_callbacks": {
+    "TrainerControl": {
+      "args": {
+        "should_epoch_stop": false,
+        "should_evaluate": false,
+        "should_log": false,
+        "should_save": true,
+        "should_training_stop": false
+      },
+      "attributes": {}
+    }
+  },
+  "total_flos": 121909645520640.0,
+  "train_batch_size": 16,
+  "trial_name": null,
+  "trial_params": null
+}

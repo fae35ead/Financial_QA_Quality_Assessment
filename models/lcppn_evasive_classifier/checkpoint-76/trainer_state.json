@@ -1,0 +1,74 @@
+{
+  "best_global_step": 38,
+  "best_metric": 0.4452127659574468,
+  "best_model_checkpoint": "../models/lcppn_evasive_classifier\\checkpoint-38",
+  "epoch": 4.0,
+  "eval_steps": 500,
+  "global_step": 76,
+  "is_hyper_param_search": false,
+  "is_local_process_zero": true,
+  "is_world_process_zero": true,
+  "log_history": [
+    {
+      "epoch": 1.0,
+      "eval_accuracy": 0.3018867924528302,
+      "eval_f1_macro": 0.1583686440677966,
+      "eval_loss": 0.6965853571891785,
+      "eval_runtime": 0.1655,
+      "eval_samples_per_second": 320.185,
+      "eval_steps_per_second": 12.082,
+      "step": 19
+    },
+    {
+      "epoch": 2.0,
+      "eval_accuracy": 0.6226415094339622,
+      "eval_f1_macro": 0.4452127659574468,
+      "eval_loss": 0.6130108833312988,
+      "eval_runtime": 0.1195,
+      "eval_samples_per_second": 443.437,
+      "eval_steps_per_second": 16.733,
+      "step": 38
+    },
+    {
+      "epoch": 3.0,
+      "eval_accuracy": 0.3584905660377358,
+      "eval_f1_macro": 0.25757575757575757,
+      "eval_loss": 0.5423703789710999,
+      "eval_runtime": 0.14,
+      "eval_samples_per_second": 378.505,
+      "eval_steps_per_second": 14.283,
+      "step": 57
+    },
+    {
+      "epoch": 4.0,
+      "eval_accuracy": 0.6037735849056604,
+      "eval_f1_macro": 0.4160460992907801,
+      "eval_loss": 0.5328084230422974,
+      "eval_runtime": 0.1185,
+      "eval_samples_per_second": 447.179,
+      "eval_steps_per_second": 16.875,
+      "step": 76
+    }
+  ],
+  "logging_steps": 500,
+  "max_steps": 95,
+  "num_input_tokens_seen": 0,
+  "num_train_epochs": 5,
+  "save_steps": 500,
+  "stateful_callbacks": {
+    "TrainerControl": {
+      "args": {
+        "should_epoch_stop": false,
+        "should_evaluate": false,
+        "should_log": false,
+        "should_save": true,
+        "should_training_stop": false
+      },
+      "attributes": {}
+    }
+  },
+  "total_flos": 118032661942272.0,
+  "train_batch_size": 16,
+  "trial_name": null,
+  "trial_params": null
+}
