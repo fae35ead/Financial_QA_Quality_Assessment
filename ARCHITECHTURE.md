@@ -194,7 +194,7 @@ Financial_QA_Quality_Assessment/
 │   ├── 08_LCPPN_Subnodes_Train.py
 │   └── 09_Inference_Pineline.py
 │
-├── utils/                            # 评估、抽样、数据增强脚本
+├── utils/                            # 评估、抽样、数据增强与候选词发现脚本
 ├── data/                             # 数据
 ├── models/                           # 模型权重
 ├── requirements.txt
@@ -315,6 +315,15 @@ Financial_QA_Quality_Assessment/
 
 ### 数据回流
 把高质量复核结果写入训练集。
+
+### 词库候选词发现（离线）
+通过 `utils/discover_candidate_terms.py` 从历史问答语料抽取高频 n-gram，
+并结合 TF-IDF 排序产出候选词清单。
+
+### 词库人工审核与回流（离线）
+通过 `utils/review_candidate_terms.py` 对候选词逐条做 `y / n / s` 审核，
+输出本次审核快照（`custom_entities.reviewed.txt` 与 `custom_stopwords.reviewed.txt`），
+并将新增词增量写入 `custom_entities.txt` 与 `custom_stopwords.txt`。
 
 > 当前阶段明确不做 Agent 全自动复核与自动入库能力。
 

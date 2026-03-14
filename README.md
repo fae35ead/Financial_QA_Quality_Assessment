@@ -198,6 +198,24 @@ python utils/data_expand.py
 python src/08_LCPPN_Subnodes_Train.py
 ```
 
+可选：先基于现有问答语料自动发现候选词条（人工审核后再补充到 `data/others/custom_entities.txt`）。
+
+```bash
+python utils/discover_candidate_terms.py --max-rows 200000 --top-k 500 --min-count 20
+```
+
+可选：运行候选词人工审核脚本，逐条输入 `y / n / s`，并自动回流词表。
+
+```bash
+python utils/review_candidate_terms.py --input data/others/candidate_entities.auto.tsv
+```
+
+脚本输出与回流行为：
+- 重写 `data/others/custom_entities.reviewed.txt`（本次审核选择 `y` 的词）
+- 重写 `data/others/custom_stopwords.reviewed.txt`（本次审核选择 `s` 的词）
+- 仅追加新增词到 `data/others/custom_entities.txt`
+- 仅追加新增词到 `data/others/custom_stopwords.txt`（不存在则创建）
+
 ### 3. 启动在线推理服务
 
 ```bash

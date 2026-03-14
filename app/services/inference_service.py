@@ -9,6 +9,15 @@ from typing import Any
 from app.core.config import Settings
 
 
+# 解析词典行：兼容“词\t词频”与“纯词”两种格式，仅保留关键词本体
+def parse_dictionary_keyword(raw_line: str) -> str:
+    normalized = raw_line.strip()
+    if not normalized:
+        return ""
+    keyword = normalized.split()[0]  # 按空白切分，自动去掉词频列
+    return keyword if len(keyword) > 1 else ""
+
+
 # 单条问答推理服务：负责模型生命周期管理和推理执行
 class InferenceService:
     ROOT_LABELS = {0: "Direct (直接响应)", 1: "Intermediate (避重就轻)", 2: "Evasive (打太极)"}
@@ -88,7 +97,8 @@ class InferenceService:
             if not file_path.exists():
                 continue
             with file_path.open("r", encoding="utf-8") as f:
-                words = [line.strip() for line in f if len(line.strip()) > 1]
+                words = [parse_dictionary_keyword(line) for line in f]
+                words = [word for word in words if word]
                 keyword_processor.add_keywords_from_list(words)  # 批量装载词典词条
         return keyword_processor
 

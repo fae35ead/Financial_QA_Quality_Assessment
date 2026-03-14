@@ -36,6 +36,15 @@ suffix_pattern = re.compile(
 
 # 2. 核心处理函数
 
+# 解析词典行：兼容“词\t词频”与“纯词”，仅保留关键词本体
+def parse_dictionary_keyword(raw_line):
+    normalized = str(raw_line).strip()
+    if not normalized:
+        return ""
+    keyword = normalized.split()[0]  # 去掉词频等附加列
+    return keyword if len(keyword) > 1 else ""
+
+
 def trim_boilerplate(text):
     """清洗董秘回答中的头尾套话"""
     if not isinstance(text, str):
@@ -58,7 +67,8 @@ def build_financial_processor():
     for file_path in dict_files:
         try:
             with file_path.open('r', encoding='utf-8') as f:
-                words = [line.strip() for line in f if len(line.strip()) > 1]
+                words = [parse_dictionary_keyword(line) for line in f]
+                words = [word for word in words if word]
                 keyword_processor.add_keywords_from_list(words)
                 total_words += len(words)
         except FileNotFoundError:
