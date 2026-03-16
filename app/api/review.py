@@ -6,7 +6,13 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from app.models.schemas import AgentSuggestionJobResponse, ReviewDetailResponse, ReviewQueueItem, ReviewQueueResponse
+from app.models.schemas import (
+    AgentSuggestionJobResponse,
+    ManualReviewEnqueueResponse,
+    ReviewDetailResponse,
+    ReviewQueueItem,
+    ReviewQueueResponse,
+)
 from app.tasks.review_tasks import generate_agent_suggestion_task
 
 router = APIRouter(tags=["review"])
@@ -57,3 +63,13 @@ def request_agent_suggestion(sample_id: str, request: Request):
         raise HTTPException(status_code=503, detail=f"Agent任务投递失败: {exc}") from exc
 
     return AgentSuggestionJobResponse(job_id=job_id, status="pending", sample_id=sample_id)
+
+
+@router.post("/review/{sample_id}/enqueue", response_model=ManualReviewEnqueueResponse)
+def enqueue_review(sample_id: str, request: Request):
+    service = request.app.state.review_service
+    try:
+        result = service.enqueue_manual_review(sample_id=sample_id, requester_id="analysis_user")
+        return ManualReviewEnqueueResponse(**result)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

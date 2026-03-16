@@ -6,6 +6,10 @@ import os
 
 from celery import Celery
 
+from app.core.env import load_project_env
+
+load_project_env()
+
 
 def _as_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)

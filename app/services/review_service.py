@@ -43,7 +43,8 @@ class ReviewService:
 
     def __init__(self, settings):
         self.settings = settings
-        self.sub_conf_threshold = float(os.getenv("QA_LOW_CONF_SUB_THRESHOLD", "45.0"))
+        self.root_conf_threshold = self._threshold_to_percent(os.getenv("QA_REVIEW_ROOT_THRESHOLD", "0.65"), 65.0)
+        self.sub_conf_threshold = self._threshold_to_percent(os.getenv("QA_REVIEW_SUB_THRESHOLD", "0.65"), 65.0)
         raw_longtail = os.getenv("QA_LONGTAIL_LABELS", "战略性模糊,外部归因,合规与风险披露").strip()
         self.longtail_labels = {x.strip() for x in raw_longtail.split(",") if x.strip()}
         default_corpus = settings.project_root / "data" / "processed" / "review_training_corpus.csv"
@@ -52,10 +53,16 @@ class ReviewService:
         if not self.training_corpus_file.is_absolute():
             self.training_corpus_file = (settings.project_root / self.training_corpus_file).resolve()
 
+    @staticmethod
+    def _threshold_to_percent(raw: str, default_percent: float) -> float:
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return default_percent
+        return value * 100 if value <= 1 else value
+
     def _root_threshold_percent(self) -> float:
-        # 配置里是0~1概率阈值，推理输出是百分比。
-        threshold = float(getattr(self.settings, "low_conf_threshold", 0.45))
-        return threshold * 100 if threshold <= 1 else threshold
+        return self.root_conf_threshold
 
     def _is_low_confidence(self, result: dict[str, Any]) -> bool:
         root_conf = float(result.get("root_confidence", 0.0))
@@ -171,6 +178,35 @@ class ReviewService:
                 "model_output_id": model_output.id,
                 "is_low_confidence": low_conf,
                 "review_status": review_status,
+            }
+
+    def enqueue_manual_review(self, sample_id: str, requester_id: str | None = None) -> dict[str, Any]:
+        with SessionLocal() as db:
+            sample = db.get(QASample, sample_id)
+            if not sample:
+                raise ValueError(f"样本不存在: {sample_id}")
+            model_output = self._latest_model_output(db, sample_id)
+            if not model_output:
+                raise ValueError(f"样本缺少模型输出: {sample_id}")
+            if model_output.review_status in {self.REVIEW_CONFIRMED, self.REVIEW_REVISED}:
+                raise ValueError("样本已完成人工复核，不允许再次入队。")
+
+            old_status = model_output.review_status
+            model_output.review_status = self.REVIEW_PENDING
+            self._add_audit_log(
+                db=db,
+                entity_type="model_output",
+                entity_id=model_output.id,
+                action="manual_enqueue_review",
+                user_id=requester_id,
+                old_value={"review_status": old_status},
+                new_value={"review_status": self.REVIEW_PENDING},
+            )
+            db.commit()
+            return {
+                "sample_id": sample_id,
+                "review_status": self.REVIEW_PENDING,
+                "enqueued": old_status != self.REVIEW_PENDING,
             }
 
     def list_queue(

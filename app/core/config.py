@@ -5,6 +5,10 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
+from app.core.env import load_project_env
+
+load_project_env()
+
 
 # 将环境变量字符串解析为布尔值，未设置时使用默认值。
 def _as_bool(env_name: str, default: bool) -> bool:
@@ -21,14 +25,36 @@ def _resolve_path(project_root: Path, env_name: str, default_relative: str) -> P
     return candidate.resolve()  # 统一转为绝对路径，减少运行时路径歧义。
 
 
+# 读取项目 .env 中的原始配置值（仅用于需要“文件值优先”的键）。
+def _read_env_file_value(project_root: Path, key: str) -> str | None:
+    env_file = project_root / ".env"
+    if not env_file.exists():
+        return None
+
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        text = line.strip()
+        if not text or text.startswith("#"):
+            continue
+        if "=" not in text:
+            continue
+        left, right = text.split("=", 1)
+        if left.strip() != key:
+            continue
+        value = right.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        return value
+    return None
+
+
 # 解析允许跨域的来源列表，并根据是否为通配符决定是否允许携带凭据。
-def _parse_cors_origins() -> tuple[list[str], bool]:
+def _parse_cors_origins() -> tuple[list[str], bool, str | None]:
     raw = os.getenv(
         "QA_ALLOW_ORIGINS",
         "http://localhost:5500,http://127.0.0.1:5500,http://localhost:63342,http://127.0.0.1:63342",
     ).strip()  # 默认覆盖常见本地前端端口（含 JetBrains 预览端口 63342）。
     if raw == "*":
-        return ["*"], False  # CORS 规范下通配符来源不能与 credentials=True 同时使用。
+        return ["*"], False, None  # CORS 规范下通配符来源不能与 credentials=True 同时使用。
 
     origins = [item.strip() for item in raw.split(",") if item.strip()]  # 解析逗号分隔来源并清洗空项。
     if not origins:
@@ -38,7 +64,10 @@ def _parse_cors_origins() -> tuple[list[str], bool]:
             "http://localhost:63342",
             "http://127.0.0.1:63342",
         ]  # 兜底默认值，避免环境变量被误设为空导致全部拒绝。
-    return origins, True  # 非通配符来源时允许携带凭据（如 Cookie/Authorization）。
+    allow_origin_regex = os.getenv("QA_ALLOW_ORIGIN_REGEX", r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$").strip()
+    if not allow_origin_regex:
+        allow_origin_regex = None
+    return origins, True, allow_origin_regex  # 非通配符来源时允许携带凭据（如 Cookie/Authorization）。
 
 
 # 统一保存应用运行配置，避免散落在代码中的硬编码。
@@ -57,6 +86,7 @@ class Settings:
     lazy_load_models: bool
     allow_origins: list[str]
     allow_credentials: bool
+    allow_origin_regex: str | None
 
 
 # 构建并缓存 Settings；整个进程生命周期内复用同一份配置对象。
@@ -65,7 +95,9 @@ def get_settings() -> Settings:
     current_dir = Path(__file__).resolve().parent  # 当前配置文件所在目录。
     project_root = current_dir.parent.parent  # 约定项目根目录在 app/ 的上两级。
 
-    allow_origins, allow_credentials = _parse_cors_origins()  # 先解析 CORS，供中间件直接使用。
+    allow_origins, allow_credentials, allow_origin_regex = _parse_cors_origins()  # 先解析 CORS，供中间件直接使用。
+    # QA_MAX_BATCH_ITEMS 使用“.env 优先”，规避系统环境残留旧值导致的上限漂移。
+    max_batch_items_raw = _read_env_file_value(project_root, "QA_MAX_BATCH_ITEMS") or os.getenv("QA_MAX_BATCH_ITEMS", "500")
 
     return Settings(
         app_name=os.getenv("QA_APP_NAME", "LCPPN 金融问答质量评估服务"),
@@ -77,8 +109,9 @@ def get_settings() -> Settings:
         max_len=int(os.getenv("QA_MAX_LEN", "384")),  # 推理最大序列长度。
         low_conf_threshold=float(os.getenv("QA_LOW_CONF_THRESHOLD", "0.45")),  # 低置信度判定阈值。
         entity_min_length=int(os.getenv("QA_ENTITY_MIN_LENGTH", "5")),  # 实体最小长度阈值。
-        max_batch_items=int(os.getenv("QA_MAX_BATCH_ITEMS", "200")),  # 批量接口单次最大条目数。
+        max_batch_items=int(max_batch_items_raw),  # 批量接口单次最大条目数。
         lazy_load_models=_as_bool("QA_LAZY_LOAD_MODELS", True),  # 是否延迟加载模型以加快启动。
         allow_origins=allow_origins,
         allow_credentials=allow_credentials,
+        allow_origin_regex=allow_origin_regex,
     )

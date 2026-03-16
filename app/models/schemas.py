@@ -1,7 +1,7 @@
 '''API 数据模型：定义请求与响应的结构化契约。'''
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -15,13 +15,27 @@ class InferRequest(BaseModel):
 
 
 # 单条推理响应模型
+class EntityHit(BaseModel):
+    text: str
+    start: int
+    end: int
+    source_text: Literal["question", "answer"]
+
+
+# 单条推理响应模型
 class InferResponse(BaseModel):
     root_id: int
     root_label: str
     root_confidence: float
     sub_label: str
     sub_confidence: float
+    root_probabilities: dict[str, float] = Field(default_factory=dict)
+    sub_probabilities: dict[str, float] = Field(default_factory=dict)
+    entity_hits: list[EntityHit] = Field(default_factory=list)
     warning: Optional[str] = None
+    sample_id: Optional[str] = None
+    is_low_confidence: Optional[bool] = None
+    review_status: Optional[str] = None
 
 
 # 批量推理中的单条样本结构
@@ -107,6 +121,13 @@ class AgentSuggestionJobResponse(BaseModel):
     job_id: str
     status: str
     sample_id: str
+
+
+# 手动加入待复核队列响应
+class ManualReviewEnqueueResponse(BaseModel):
+    sample_id: str
+    review_status: str
+    enqueued: bool
 
 
 # 人工复核提交请求

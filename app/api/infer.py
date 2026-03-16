@@ -14,7 +14,7 @@ def _evaluate(request: Request, payload: InferRequest) -> InferResponse:
     try:
         result = service.evaluate(payload.question, payload.answer)
         # 阶段C副作用：推理结果落库并执行低置信度入队判定。
-        review_service.record_inference(
+        persisted = review_service.record_inference(
             payload={
                 "company_name": payload.company_name,
                 "qa_time": payload.qa_time,
@@ -24,7 +24,12 @@ def _evaluate(request: Request, payload: InferRequest) -> InferResponse:
             },
             result=result,
         )
-        return InferResponse(**result)
+        return InferResponse(
+            **result,
+            sample_id=persisted["sample_id"],
+            is_low_confidence=persisted["is_low_confidence"],
+            review_status=persisted["review_status"],
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc  # 入参问题
     except RuntimeError as exc:

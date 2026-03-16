@@ -156,6 +156,12 @@
 
 ```text
 Financial_QA_Quality_Assessment/
+├── frontend/                         # 阶段D React + TypeScript 前端工程（Vite）
+│   ├── src/App.tsx                   # 三页面路由入口（分析页/批量任务页/待复核页）
+│   ├── src/pages/                    # 页面级组件
+│   ├── src/components/               # 复用组件（实体高亮/概率雷达图）
+│   └── src/api/client.ts             # 前端 API 请求封装
+│
 ├── app/                              # 应用层（阶段A+B+C 已落地）
 │   ├── main.py                       # FastAPI 启动入口与应用装配
 │   ├── api/                          # 接口层
@@ -211,12 +217,13 @@ Financial_QA_Quality_Assessment/
 - 单条输入
 - 展示分类结果
 - 实体高亮
-- 雷达图展示
+- 雷达图展示（Direct/Intermediate/Evasive 均支持）
 
 ### 批量分析页
 - Excel 上传
 - 批量任务进度查看
 - 结果下载
+- 单次上限 500 条样本
 
 ### 复核页
 - 低置信度样本列表
@@ -241,8 +248,13 @@ Financial_QA_Quality_Assessment/
 ### `/batch_infer`
 负责批量任务创建。（已实现，当前使用内存任务队列 + BackgroundTasks）
 
-### `/jobs/{id}`
-返回批量任务状态。（已实现，覆盖批量任务与 Agent 建议任务）
+### `/jobs/{job_id}`
+返回批量任务状态与结果。（已实现，覆盖批量任务与 Agent 建议任务）
+
+批任务结果 `results[].result` 已包含前端可解释字段：
+- `root_probabilities`
+- `sub_probabilities`
+- `entity_hits`
 
 ### `/annotate`
 保存人工复核结果。（已实现）
@@ -253,11 +265,14 @@ Financial_QA_Quality_Assessment/
 ### `/review/{sample_id}`
 获取单样本复核详情：模型结论、Agent建议、人工记录。（已实现）
 
+### `/review/{sample_id}/enqueue`
+人工将当前样本手动加入待复核队列。（已实现）
+
 ### `/review/{sample_id}/agent-suggestion`
 人工触发 Agent 建议生成（异步）。（已实现）
 
-### `/export/{id}`
-导出分析结果或审计包。（规划中）
+### `/jobs/{job_id}/export`
+导出批量任务结果 CSV。（已实现）
 
 ---
 
@@ -276,13 +291,13 @@ Financial_QA_Quality_Assessment/
 负责批量任务状态存储与进度管理。（已实现，当前为内存实现，后续迁移 Redis/PostgreSQL）
 
 ### review_service
-负责低置信度判定、待复核入队、复核详情聚合、人工提交与训练集回流。（已实现）
+负责低置信度判定（父/子阈值 0.65）、自动/手动入队、复核详情聚合、人工提交与训练集回流。（已实现）
 
 ### agent_service
 负责 Dify 建议调用与建议结果规范化。（已实现）
 
 ### export_service
-负责导出 CSV、Excel、审计包。（规划中）
+负责多格式导出（Excel、审计包等）扩展能力。（规划中）
 
 ---
 
@@ -300,15 +315,25 @@ Financial_QA_Quality_Assessment/
 ### 模型包装层
 对模型输出进行统一结构化封装，便于前端展示与后续复核。
 
+当前推理响应已提供：
+- 根节点全概率分布（`root_probabilities`）
+- 子节点全概率分布（`sub_probabilities`）
+- 实体命中坐标（`entity_hits`）
+
 ---
 
 ## 5.5 数据飞轮模块
 
 ### 低置信度样本识别
-根据模型置信度阈值，把样本送入复核队列。
+根据模型置信度阈值，把样本送入复核队列：
+- 第一层置信度 < 0.65
+- 第二层置信度 < 0.65
 
 ### 人工复核
 由人工确认或修改结果。
+
+### 手动入队补充机制
+分析页可将当前问答对手动加入待复核队列，用于覆盖“高置信但疑似误判”场景。
 
 ### 可选 Agent 复核建议
 仅对低置信度样本给建议，且由人工点击触发，不进入默认主流程。
@@ -529,7 +554,7 @@ Financial_QA_Quality_Assessment/
 - 批量任务与推理接口至少覆盖基本用例
 
 ### 前端
-- 使用 Jest / React Testing Library
+- 使用 Vitest / React Testing Library
 - 核心页面至少覆盖渲染和主要交互
 
 ---
@@ -593,3 +618,27 @@ Financial_QA_Quality_Assessment/
 - 形成一个适合面试展示、可讲清楚、可跑起来、可扩展的项目原型
 
 因此，这是一套围绕 **轻量、清晰、可维护、可扩展** 设计出来的产品架构方案。
+
+---
+
+## 11. 阶段E编排契约（Production Path）
+
+阶段E默认演示链路仅包含四个服务：
+- api
+- worker
+- redis
+- postgres
+
+关键契约：
+- `api/worker` 复用同一后端镜像（统一 Dockerfile）。
+- `api` 不使用 `--reload`，`worker` 使用固定 Celery 启动参数。
+- `postgres/redis/api` 均需健康检查。
+- `api/worker` 的 `depends_on` 统一使用 `service_healthy`。
+- Compose 场景强制 `QA_DATABASE_FALLBACK_TO_SQLITE=false`，DB 故障应 fail-fast。
+- `/api/health` 作为容器探活接口。
+
+验收建议：
+1. `docker compose up --build -d postgres redis api worker`
+2. `docker compose ps` 确认四服务可用
+3. `curl http://127.0.0.1:8000/api/health` 返回 `status=ok`
+4. 复核链路验证：入队 -> Agent 建议 -> 任务轮询 -> 导出

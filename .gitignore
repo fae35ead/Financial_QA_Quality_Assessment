@@ -21,7 +21,12 @@ __pycache__/
 
 # 忽略虚拟环境 (如果你建在了项目目录下)
 venv/
+.env
 .env/
+node_modules/
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
 
 # 忽略测试
 test/

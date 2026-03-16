@@ -60,19 +60,21 @@
   - 或逃避战术概率分布
 
 ### 2. 批量 Excel / CSV 上传分析
-支持批量上传问答对数据，适合监管排查与历史样本回放。
+支持批量上传问答对数据，适合监管排查与历史样本回放（单次上限 500 条）。
 
 ### 3. 实体与意图高亮
 对文本中的关键财务实体进行高亮展示，并在顶部输出业务标签或高风险标签。
 
 ### 4. 置信度雷达图
-对于逃避样本，展示各类逃避战术的概率分布雷达图，帮助快速理解模型判断。
+对于直接回答、部分响应、逃避回答样本，均可展示子节点概率分布雷达图，帮助快速理解模型判断。
 
 ### 5. 低置信度数据飞轮
 当模型对第一层或第二层判断置信度不足时：
 - 样本自动进入待复核队列
+- 阈值规则：第一层置信度 < 0.65 或第二层置信度 < 0.65
 - 由人工确认或修正结果
 - 可选让 Agent 给出复核建议
+- 分析页支持“手动加入待复核队列”，用于高置信但疑似误判样本
 - 高质量复核结果进入训练集，用于模型持续优化
 
 ### 6. 私有化部署
@@ -181,6 +183,22 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
+如果你使用 PyCharm 或本地静态服务，页面端口可能是随机的（如 `127.0.0.1:3611`）。
+建议在 `.env` 配置：
+
+```env
+QA_ALLOW_ORIGIN_REGEX=^https?://(localhost|127\\.0\\.0\\.1)(:\\d+)?$
+```
+
+否则浏览器对 `POST /api/evaluate` 的预检请求（`OPTIONS`）可能返回 `400 Disallowed CORS origin`，前端表现为 `Failed to fetch`。
+
+复核入队阈值可通过以下环境变量调整（支持 `0~1` 概率或百分比）：
+
+```env
+QA_REVIEW_ROOT_THRESHOLD=0.65
+QA_REVIEW_SUB_THRESHOLD=0.65
+```
+
 ### 2. 准备模型权重
 
 如果仓库中没有现成模型权重，需要按顺序运行 `src/` 目录下的脚本完成训练与蒸馏：
@@ -234,27 +252,73 @@ celery -A app.core.celery_app.celery_app worker --loglevel=info
 docker compose up -d postgres redis
 ```
 
+如果仅做前端联调且本机未启动 PostgreSQL，可在 `.env` 中保留
+`QA_DATABASE_FALLBACK_TO_SQLITE=true`（默认即为 true），
+后端在 PostgreSQL 不可用时会自动回退到 `data/processed/stage_c.db`。
+若不想打印完整数据库异常细节，可设置 `QA_DATABASE_FALLBACK_VERBOSE=false`（默认值）。
+
 ### 5. 打开前端页面
 
-直接打开：
+#### 过渡静态页（兼容保留）
 
 ```text
 app/index.html
 app/review.html
 ```
 
-如果后续接入 React 前端，可通过 Vite 或 Nginx 单独启动前端服务。
+#### React + TS 产品化前端（阶段D）
 
-### 6. 核心 API（阶段C）
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+默认地址：`http://127.0.0.1:5173`（或 Vite 输出地址）。
+
+### 6. 核心 API（阶段D）
 
 - `POST /infer`：单条问答推理
-- `POST /api/evaluate`：与原型前端兼容的单条推理接口
+- `POST /api/evaluate`：与原型前端兼容的单条推理接口（响应含 `sample_id` 与复核状态）
 - `POST /batch_infer`：创建批量分析任务
 - `GET /jobs/{job_id}`：查询批任务状态与结果
+- `GET /jobs/{job_id}/export`：导出批任务结果 CSV
 - `GET /review/queue`：分页拉取待复核样本队列
 - `GET /review/{sample_id}`：查看样本详情、模型输出、Agent建议、人工记录
+- `POST /review/{sample_id}/enqueue`：手动把当前样本加入待复核队列
 - `POST /review/{sample_id}/agent-suggestion`：人工触发 Agent 建议（异步）
 - `POST /annotate`：人工确认/修改并回流训练集
+
+`/infer` 与 `/api/evaluate` 当前响应中已包含：
+- `root_probabilities`：根节点全概率分布
+- `sub_probabilities`：子节点全概率分布
+- `entity_hits`：实体命中（含 `text/start/end/source_text`）
+
+### 7. Dify 工作流 I/O 契约（复核建议）
+
+为保证 `AgentService` 与 Dify 工作流稳定对接，建议按以下契约配置：
+
+- 输入变量（Workflow `inputs`）：
+  - `question`：投资者提问文本
+  - `answer`：董秘回答文本
+  - `model_result`：模型初判（默认以 JSON 字符串传入，兼容 Dify `text-input`）
+- 输出内容（建议）：
+  - 返回一个 JSON 对象，字段为 `root_label`、`sub_label`、`confidence`、`reason`
+  - `root_label` 仅允许：`Direct (直接响应)` / `Intermediate (避重就轻)` / `Evasive (打太极)`
+  - `confidence` 为 0~1 浮点数
+  - 可选补充 `evidence` 字段，存放模型判定证据片段
+
+后端默认按以下路径依次读取 Dify 输出：`answer`、`output_text`、`data.answer`、`data.outputs.result` 等。
+若你的工作流输出字段不同，可用环境变量 `QA_DIFY_OUTPUT_PATH` 指定（例如 `data.outputs.result`）。
+若你的工作流把 `model_result` 改成对象输入，可将 `QA_DIFY_MODEL_RESULT_AS_JSON=false`。
+若你希望控制 Agent 建议等待时长，可设置：
+- `QA_DIFY_CONNECT_TIMEOUT`（默认 5 秒）
+- `QA_DIFY_WRITE_TIMEOUT`（默认 10 秒）
+- `QA_DIFY_READ_TIMEOUT`（默认 20 秒，超时后自动回退为模型结论）
+
+兼容说明（后端自动归一）：
+- `root_label` 若输出 `Direct/Intermediate/Evasive/Fully Evasive`，会自动映射到系统标准标签。
+- `sub_label` 在 `Evasive` 下若输出 `以定期报告为准` 等同义表述，会自动映射为 `推迟回答`。
 
 ---
 
@@ -282,7 +346,7 @@ app/review.html
 3. 前端展示：
    - 是否逃避
    - 置信度
-   - 财务实体高亮或逃避战术雷达图
+   - 财务实体高亮或子节点概率雷达图
 4. 若置信度低，则进入待复核队列
 
 ### 场景 2：监管批量排查
@@ -305,12 +369,12 @@ app/review.html
 - FastAPI 原型部署
 - 阶段C（收缩版）数据飞轮闭环：低置信度入队、Agent建议辅助、人工复核回流
 - PostgreSQL + Redis + Celery 技术栈接入（复核链路）
+- 阶段D 前端升级：React + TypeScript 三页面（分析页、批量任务页、待复核页）
+- 阶段D 可解释结果：实体高亮、概率分布与子节点雷达图（Direct/Intermediate/Evasive）
+- 阶段D 批任务能力：任务进度轮询与 `GET /jobs/{job_id}/export` CSV 导出
 
 ### 计划中
-- 全量 React 复核后台
 - 数据飞轮与 LoRA 微调自动训练流水线
-- React 产品化前端
-- 批量上传与导出
 - 审计日志与私有化部署脚本
 
 ---
@@ -334,3 +398,45 @@ app/review.html
 ## License
 
 本项目用于学术研究、个人学习、面试展示与产品原型训练。
+
+## 阶段E运行手册（Docker Compose）
+
+阶段E主入口锁定为 `api + worker + redis + postgres`，不包含前端服务。
+
+### 1) 启动
+
+```bash
+docker compose up --build -d postgres redis api worker
+docker compose ps
+```
+
+### 2) 健康检查
+
+```bash
+curl http://127.0.0.1:8000/api/health
+```
+
+预期返回 `status=ok`，并可看到模型初始化状态与任务仓库状态。
+
+### 3) 阶段E关键配置约束
+
+- Compose 场景强制 `QA_DATABASE_FALLBACK_TO_SQLITE=false`
+- `api/worker` 仅在依赖服务 healthy 后启动
+- `api` 使用非 `--reload` 启动模式
+- `api/worker` 不允许运行时 `pip install`
+
+### 4) 常见故障排查
+
+1. `api` 启动失败且提示数据库不可用  
+   检查 `postgres` 容器是否 healthy；确认 `QA_DATABASE_URL` 指向 `postgres:5432`。
+2. 触发 Agent 建议任务后长期 pending  
+   检查 `worker` 日志与 `redis` 状态：`docker compose logs worker redis --tail=200`。
+3. 前端 `Failed to fetch`  
+   检查 CORS 配置（`QA_ALLOW_ORIGIN_REGEX`）以及后端接口地址是否指向 `http://127.0.0.1:8000`。
+
+### 5) 演示流程建议
+
+1. 分析页输入问答，触发模型推理。  
+2. 低置信度样本自动入队，或手动加入待复核队列。  
+3. 在复核页触发 Agent 建议并轮询 `/jobs/{job_id}`。  
+4. 查看复核详情并完成导出。

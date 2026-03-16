@@ -49,12 +49,24 @@
           </div>
         </section>
 
-        <section class="flex flex-col sm:flex-row items-center justify-between bg-white rounded-2xl shadow-sm border border-slate-200 p-4 px-6">
-          <p id="errorMsg" class="text-sm text-red-600 font-medium hidden"></p>
+        <section class="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white rounded-2xl shadow-sm border border-slate-200 p-4 px-6">
+          <div class="w-full">
+            <p id="errorMsg" class="text-sm text-red-600 font-medium hidden"></p>
+            <p id="reviewMsg" class="text-sm text-emerald-700 font-medium hidden"></p>
+          </div>
           <div class="flex-grow"></div>
-          <button id="evaluateBtn" class="w-full sm:w-auto bg-slate-900 hover:bg-blue-600 text-white font-medium py-3 px-8 rounded-xl transition duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
-            启动 LCPPN 深度诊断
-          </button>
+          <div class="w-full sm:w-auto flex flex-col sm:flex-row gap-2">
+            <button
+              id="enqueueBtn"
+              disabled
+              class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-medium py-3 px-6 rounded-xl transition duration-300"
+            >
+              加入待复核队列
+            </button>
+            <button id="evaluateBtn" class="w-full sm:w-auto bg-slate-900 hover:bg-blue-600 text-white font-medium py-3 px-8 rounded-xl transition duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
+              启动 LCPPN 深度诊断
+            </button>
+          </div>
         </section>
 
         <section id="resultArea" class="hidden space-y-4">
@@ -110,13 +122,16 @@
       const questionEl = document.getElementById("question");
       const answerEl = document.getElementById("answer");
       const btnEl = document.getElementById("evaluateBtn");
+      const enqueueBtnEl = document.getElementById("enqueueBtn");
       const errorMsgEl = document.getElementById("errorMsg");
+      const reviewMsgEl = document.getElementById("reviewMsg");
 
       const resultArea = document.getElementById("resultArea");
       const rootCard = document.getElementById("rootCard");
       const subCard = document.getElementById("subCard");
       const warningBanner = document.getElementById("warningBanner");
       const warningText = document.getElementById("warningText");
+      let latestSampleId = null;
 
       // 动态获取卡片主题色
       function getThemeStyles(rootId) {
@@ -136,8 +151,11 @@
         const answer = answerEl.value.trim();
 
         errorMsgEl.classList.add("hidden");
+        reviewMsgEl.classList.add("hidden");
         resultArea.classList.add("hidden");
         warningBanner.classList.add("hidden");
+        latestSampleId = null;
+        enqueueBtnEl.disabled = true;
 
         if (!question || !answer) {
           errorMsgEl.textContent = "提问与回答不可为空！";
@@ -160,6 +178,7 @@
           }
 
           const data = await resp.json();
+          latestSampleId = data.sample_id || null;
 
           // 渲染警告
           if (data.warning) {
@@ -185,6 +204,13 @@
 
           // 展开结果区
           resultArea.classList.remove("hidden");
+          if (latestSampleId) {
+            enqueueBtnEl.disabled = false;
+          }
+          if (data.review_status === "pending_review") {
+            reviewMsgEl.textContent = "该样本已自动进入待复核队列。";
+            reviewMsgEl.classList.remove("hidden");
+          }
 
         } catch (error) {
           errorMsgEl.textContent = error.message;
@@ -192,6 +218,34 @@
         } finally {
           btnEl.disabled = false;
           btnEl.innerHTML = "启动 LCPPN 深度诊断";
+        }
+      });
+
+      enqueueBtnEl.addEventListener("click", async () => {
+        errorMsgEl.classList.add("hidden");
+        reviewMsgEl.classList.add("hidden");
+        if (!latestSampleId) {
+          errorMsgEl.textContent = "请先执行一次分析，再手动加入待复核队列。";
+          errorMsgEl.classList.remove("hidden");
+          return;
+        }
+
+        enqueueBtnEl.disabled = true;
+        try {
+          const resp = await fetch(`${API_BASE}/review/${latestSampleId}/enqueue`, {
+            method: "POST",
+          });
+          const payload = await resp.json();
+          if (!resp.ok) {
+            throw new Error(payload.detail || "手动入队失败");
+          }
+          reviewMsgEl.textContent = payload.enqueued ? "已手动加入待复核队列。" : "该样本已在待复核队列中。";
+          reviewMsgEl.classList.remove("hidden");
+        } catch (error) {
+          errorMsgEl.textContent = error.message;
+          errorMsgEl.classList.remove("hidden");
+        } finally {
+          enqueueBtnEl.disabled = false;
         }
       });
     </script>
