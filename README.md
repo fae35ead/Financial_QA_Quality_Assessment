@@ -72,6 +72,13 @@
 - 数据闭环层：`ReviewService` 将推理结果落库，执行低置信度入队、复核状态流转、训练语料回流。
 - 前端工作台层：`React + Ant Design` 提供分析、批任务、复核三类页面，调用统一后端 API。
 
+## 系统界面浏览
+<img width="1896" height="1645" alt="批量任务" src="https://github.com/user-attachments/assets/29d0e7b8-e2cc-4a3c-8c00-aedf2bffc342" />
+<img width="1912" height="956" alt="人工复核" src="https://github.com/user-attachments/assets/5a9643e4-5ec6-407f-ad91-c8175de94f5b" />
+<img width="1898" height="2288" alt="首页分析" src="https://github.com/user-attachments/assets/6d78dbbe-e748-4d7f-a4cf-1baf84469bdc" />
+
+
+
 ## 项目目录结构
 ```text
 .
