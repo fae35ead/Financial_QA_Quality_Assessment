@@ -14,9 +14,8 @@
 
 ## 项目界面
 <img width="1898" height="2288" alt="首页分析" src="https://github.com/user-attachments/assets/7990dc49-c858-4c27-8812-af84fa48cb4f" />
-![Uploading 批量任务.png…]()
-![Uploading 人工复核.png…]()
-
+<img width="1896" height="1645" alt="批量任务" src="https://github.com/user-attachments/assets/a626fd16-9a14-41a4-9ccf-9d8228023bcd" />
+<img width="1912" height="956" alt="人工复核" src="https://github.com/user-attachments/assets/63d11a7b-b3ed-4583-90c3-653d577cd674" />
 
 ---
 ## 如何运行
