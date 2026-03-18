@@ -1,442 +1,253 @@
-# A股问答对智能分析与监管合规轻量化平台
+# 金融问答对实体识别与逃避战术检测系统（产品化原型）
 
 ## 项目简介
+### 项目背景
+本项目聚焦上市公司投资者问答场景，目标是将原有研究型模型能力升级为可演示、可复核、可迭代的数据产品原型。  
+核心方向是围绕**金融问答**文本，完成**财务实体识别**与**逃避战术检测**，并通过**低置信度复核**形成**数据飞轮**。
 
-这是一个面向 **A 股互动问答场景** 的轻量级智能分析产品原型，目标是把现有的金融 NLP 研究项目进一步包装成具备产品思维和业务落地能力的解决方案，用于展示在 **监管与合规场景** 下的实际应用价值。
+### 核心问题
+- 问答文本中既有业务事实，也有大量模板化/策略性回复，纯规则难以稳定识别。
+- 二层细分类（尤其逃避战术细类）存在长尾问题，单次训练难以覆盖。
+- 仅有推理接口不足以支持持续迭代，需要将“模型判断 -> 复核 -> 回流训练集”闭环化。
 
-项目基于现有的 **A 股问答对财务实体提取与董秘逃避战术鉴别系统** 演进而来，核心能力包括：
+### 当前解决方案
+- 在线推理：`FastAPI` 提供单条/批量接口，输出两层分类、概率分布、实体命中信息。
+- 复核闭环：将低置信度样本自动入队，支持人工触发 `Dify Agent 辅助复核`，人工确认后回流训练语料。
+- 产品化升级：新增 `React + TypeScript` 前端工作台，覆盖分析页、批任务页、复核页。
 
-- 对输入的问答对进行两层识别：
-  - **第一层**：判断董秘回答是“直接回答”还是“逃避回答”
-  - **第二层**：
-    - 若为直接回答，则执行 **财务实体提取**，输出结构化业务信息
-    - 若为逃避回答，则执行 **逃避战术识别**，输出战术分类与置信度分布
-- 对 **低置信度样本** 启动数据飞轮：
-  - 默认进入人工复核队列
-  - 可选使用 Agent 对低置信度样本进行复核建议
-  - 复核结果沉淀为高质量样本，用于后续微调与迭代
+## 核心能力
+### 问答对预处理 / 金融相关过滤
+- [已完成] 离线数据处理脚本链路（`src/00` ~ `src/02`）用于数据清洗、实体相关过滤、信息熵筛选。
+- [已完成] 在线推理前置实体门卫：基于金融词典（`THUOCL_caijing`、`baostock_entities`、`custom_entities`）与最小长度规则拦截低相关样本。
+- [进行中] 词典扩充流程已提供工具（`utils/discover_candidate_terms.py`、`utils/review_candidate_terms.py`），以“自动发现 + 人工审核”方式持续补词。
 
-这个项目不是面向真实商业上线的 SaaS 产品，而是一个 **面向实习招聘、面试展示与产品能力训练** 的完整产品化项目：既保留了模型与算法深度，也体现了从“模型工程”走向“业务产品”的思考能力。
+### 两层分类/识别能力
+- [已完成] 第一层分类：`Direct / Intermediate / Evasive`。
+- [已完成] 第二层分支：
+  - `Direct` 分支：财务业务子类识别（5类）。
+  - `Evasive` 分支：逃避战术子类识别（4类）。
+  - `Intermediate` 分支：固定为“无下游细分（部分响应）”。
+- [已完成] 返回可解释字段：`root_probabilities`、`sub_probabilities`、`entity_hits`、`warning`。
 
----
+### 推理服务
+- [已完成] `POST /infer` 与兼容接口 `POST /api/evaluate`。
+- [已完成] `POST /batch_infer` + `GET /jobs/{id}` + `GET /jobs/{id}/export`（CSV导出）。
+- [进行中] 批任务状态当前使用内存任务仓库（`InMemoryJobStore`），服务重启后不可恢复。
 
-## 解决什么问题
+### 数据飞轮闭环
+- [已完成] 低置信度判定（根节点阈值、子节点阈值、长尾标签）与自动入复核队列。
+- [已完成] 人工复核提交后写入 `data/processed/review_training_corpus.csv`，支持样本回流。
+- [进行中] 自动化再训练/自动发布尚未打通，当前仍以离线训练脚本为主。
 
-### 1. 行业内缺少垂直金融问答解析能力
-通用 NLP 模型或大模型在复杂金融语境、修辞性逃避、董秘话术等场景下效果有限，难以低成本规模化处理海量问答对。
+### Agent 辅助复核
+- [已完成] 人工触发 Agent 建议：`POST /review/{sample_id}/agent-suggestion`，异步任务由 `Celery` 执行。
+- [已完成] 支持 Dify 输出解析、字段映射、超时兜底、无效响应兜底。
+- [进行中] 真实业务工作流 Prompt 与输出字段仍需按具体 Dify 工作流持续联调优化。
 
-### 2. 人工处理效率低
-监管人员或数据分析人员面对全市场每日新增问答时，依赖人工逐条筛选的效率较低，难以及时发现高风险样本或提取结构化情报。
+## 当前实现进度
+### 已完成
+- [已完成] 本地模型推理服务（两层分类 + 概率分布 + 实体命中）。
+- [已完成] 单条分析、批量分析、任务轮询、CSV导出全链路接口。
+- [已完成] 低置信度自动入队、手动入队、复核详情查询。
+- [已完成] Dify Agent 异步建议任务链路（API -> Celery -> DB 回写）。
+- [已完成] 人工确认/修正并回流训练语料。
+- [已完成] React 前端三页原型（分析、批任务、复核）与基础单测。
+- [已完成] Docker Compose 编排（`api + worker + redis + postgres`）。
 
-### 3. 长尾类别识别弱
-现有模型在第一层分类表现较好，但第二层某些细分类别仍存在明显长尾问题，需要通过低置信度复核与持续微调形成数据飞轮。
+### 进行中
+- [进行中] 批量任务持久化（当前为内存态，生产韧性有限）。
+- [进行中] 前端仍属产品化原型阶段，尚未接入权限体系与完整审计视图。
+- [进行中] 数据飞轮“回流 -> 自动训练 -> 自动发布”仍为半自动流程。
+- [进行中] Dify 工作流输出协议在不同应用下需要继续对齐。
 
----
+### 下一步计划
+- [规划中] 批任务改造为持久化任务队列（支持重启恢复与更细粒度监控）。
+- [规划中] 增量训练流水线与模型版本管理自动化。
+- [规划中] 复核审计看板、角色权限、操作留痕增强。
 
-## 目标用户
+## 系统架构概览
+系统由四个层次组成：
+- 在线推理层：`InferenceService` 负责实体门卫、根节点分类、子节点分类与解释性输出。
+- API 与任务层：`FastAPI` 提供业务接口；批量推理通过 `BackgroundTasks` 运行；Agent 建议通过 `Celery + Redis` 异步执行。
+- 数据闭环层：`ReviewService` 将推理结果落库，执行低置信度入队、复核状态流转、训练语料回流。
+- 前端工作台层：`React + Ant Design` 提供分析、批任务、复核三类页面，调用统一后端 API。
 
-### 主用户群 A：监管与合规端
-- 交易所一线监管人员
-- 证监局审查员
-- 上市公司董秘办内审人员
-
-### 次用户群 B：量化投研端
-- 量化私募研究员
-- 券商资管数据挖掘人员
-- 第三方金融终端数据加工方
-
-当前版本优先服务 **监管端场景**。
-
----
-
-## 核心功能
-
-### 1. 单条问答分析
-支持用户直接粘贴一组问答文本，系统自动输出：
-- 第一层分类结果（直接回答 / 逃避回答）
-- 第一层置信度
-- 第二层结果：
-  - 财务实体提取结果
-  - 或逃避战术概率分布
-
-### 2. 批量 Excel / CSV 上传分析
-支持批量上传问答对数据，适合监管排查与历史样本回放（单次上限 500 条）。
-
-### 3. 实体与意图高亮
-对文本中的关键财务实体进行高亮展示，并在顶部输出业务标签或高风险标签。
-
-### 4. 置信度雷达图
-对于直接回答、部分响应、逃避回答样本，均可展示子节点概率分布雷达图，帮助快速理解模型判断。
-
-### 5. 低置信度数据飞轮
-当模型对第一层或第二层判断置信度不足时：
-- 样本自动进入待复核队列
-- 阈值规则：第一层置信度 < 0.65 或第二层置信度 < 0.65
-- 由人工确认或修正结果
-- 可选让 Agent 给出复核建议
-- 分析页支持“手动加入待复核队列”，用于高置信但疑似误判样本
-- 高质量复核结果进入训练集，用于模型持续优化
-
-### 6. 私有化部署
-系统设计支持私有化部署，适合监管与合规场景的使用要求。
-
----
-
-## 当前模型能力概览
-
-当前项目已有一套完整的模型训练与部署流程，包括：
-
-1. 原始问答数据去噪
-2. 金融实体识别与无关回答过滤
-3. 使用 LLM 打标 1000 条数据训练 Teacher 模型（RoBERTa）
-4. Teacher 对 10 万条数据打软标签，蒸馏 Student 模型（DistilBERT）
-5. 针对少数类做 LLM 扩充，并基于 EvasionBench 规则生成：
-   - 财务实体分类器
-   - 逃避战术分类器
-6. 最终完成模型推理部署
-
-### 当前效果
-- 第一层分类：整体指标在 **80%+**
-- 第二层分类：整体约 **60% 左右**
-  - 部分类别可达 **80%+**
-  - 部分长尾类别仅约 **30%**
-- 推理延迟较低，已支持 FastAPI 原型部署
-
----
-
-## 技术栈
-
-### 当前项目已使用
-- Python 3.10+
-- PyTorch
-- Hugging Face Transformers
-- FastAPI
-- FlashText
-- Jupyter Notebook
-
-### 产品化推荐技术栈
-#### 前端
-- React
-- TypeScript
-- Ant Design
-- ECharts
-- React Query / Zustand
-
-#### 后端
-- FastAPI
-- Celery
-- Redis
-- PostgreSQL
-- MinIO（或兼容 S3 的对象存储）
-
-#### 模型与训练
-- PyTorch
-- Hugging Face Transformers
-- PEFT / LoRA
-- MLflow
-
-#### 部署与运维
-- Docker
-- Docker Compose
-- Kubernetes（可选）
-- Prometheus + Grafana
-
----
-
-## 项目结构（当前仓库）
-
+## 项目目录结构
 ```text
-Financial_QA_Quality_Assessment/
-├── app/                        # FastAPI 服务与前端原型页面
-│   ├── api/                    # 路由层（含 review/annotate）
-│   ├── core/                   # 配置、数据库、Celery基础能力
-│   ├── models/                 # Pydantic 请求响应模型
-│   ├── services/               # 推理、批量任务、复核、Agent服务
-│   ├── tasks/                  # Celery 异步任务
-│   ├── main.py                 # 应用装配入口
-│   ├── index.html              # 分析页面（兼容 /api/evaluate）
-│   └── review.html             # 低置信度复核工作台
-├── data/                       # 数据集、字典与处理结果
-├── models/                     # 模型权重目录
-├── notebooks/                  # 实验分析与评估记录
-├── src/                        # 核心训练与推理脚本
-├── utils/                      # 工具函数
-└── requirements.txt            # Python 依赖
+.
+├─ app/
+│  ├─ api/                    # /infer /batch_infer /jobs /review /annotate
+│  ├─ core/                   # 配置、数据库、Celery
+│  ├─ models/                 # Pydantic 模型 + SQLAlchemy ORM
+│  ├─ services/               # 推理、复核、Agent、批处理服务
+│  ├─ tasks/                  # Celery 异步任务
+│  ├─ main.py                 # FastAPI 应用入口
+│  ├─ index.html              # 旧版静态分析页（兼容保留）
+│  └─ review.html             # 旧版静态复核页（兼容保留）
+├─ frontend/                  # React + TS 前端
+│  └─ src/
+│     ├─ pages/               # Analysis / BatchTasks / Review 页面
+│     ├─ components/          # EntityHighlight / ProbabilityRadar
+│     └─ api/client.ts        # 前端 API 封装
+├─ src/                       # 离线训练与数据处理脚本（00~09）
+├─ utils/                     # 词条发现、词条复核、评估与数据增强工具
+├─ data/
+│  ├─ raw/                    # 原始问答数据
+│  ├─ processed/              # 中间产物、训练集、stage_c.db、回流语料
+│  └─ others/                 # 金融词典、停用词、候选词文件
+├─ tests/                     # 后端与数据工具测试
+├─ docker-compose.yml
+├─ Dockerfile
+└─ requirements.txt
 ```
 
----
+## 快速开始
+### 环境要求
+- Python `3.10+`
+- Node.js `20+`（前端 Vite 8）
+- Redis（Agent 异步任务需要）
+- PostgreSQL（推荐；也支持 SQLite 回退）
 
-## 如何运行
-
-### 1. 创建环境
-
+### 安装依赖
 ```bash
-conda create -n qa_env python=3.10
-conda activate qa_env
 pip install -r requirements.txt
-```
-
-可选：复制一份环境变量模板并按本机路径调整模型目录。
-
-```bash
-# Windows PowerShell
-Copy-Item .env.example .env
-```
-
-如果你使用 PyCharm 或本地静态服务，页面端口可能是随机的（如 `127.0.0.1:3611`）。
-建议在 `.env` 配置：
-
-```env
-QA_ALLOW_ORIGIN_REGEX=^https?://(localhost|127\\.0\\.0\\.1)(:\\d+)?$
-```
-
-否则浏览器对 `POST /api/evaluate` 的预检请求（`OPTIONS`）可能返回 `400 Disallowed CORS origin`，前端表现为 `Failed to fetch`。
-
-复核入队阈值可通过以下环境变量调整（支持 `0~1` 概率或百分比）：
-
-```env
-QA_REVIEW_ROOT_THRESHOLD=0.65
-QA_REVIEW_SUB_THRESHOLD=0.65
-```
-
-### 2. 准备模型权重
-
-如果仓库中没有现成模型权重，需要按顺序运行 `src/` 目录下的脚本完成训练与蒸馏：
-
-```bash
-python src/00_Data_Preprocess.py
-python src/01_Entities_Filter.py
-python src/02_Entropy_Calculated.py
-python src/03_LLM_Labeling.py
-python src/04_Teacher_Model_Train.py
-python src/05_Teacher_Inference.py
-python src/06_Student_Model_Distillation.py
-python src/07_LLM_Subnode_Labeling.py
-python utils/data_expand.py
-python src/08_LCPPN_Subnodes_Train.py
-```
-
-可选：先基于现有问答语料自动发现候选词条（人工审核后再补充到 `data/others/custom_entities.txt`）。
-
-```bash
-python utils/discover_candidate_terms.py --max-rows 200000 --top-k 500 --min-count 20
-```
-
-可选：运行候选词人工审核脚本，逐条输入 `y / n / s`，并自动回流词表。
-
-```bash
-python utils/review_candidate_terms.py --input data/others/candidate_entities.auto.tsv
-```
-
-脚本输出与回流行为：
-- 重写 `data/others/custom_entities.reviewed.txt`（本次审核选择 `y` 的词）
-- 重写 `data/others/custom_stopwords.reviewed.txt`（本次审核选择 `s` 的词）
-- 仅追加新增词到 `data/others/custom_entities.txt`
-- 仅追加新增词到 `data/others/custom_stopwords.txt`（不存在则创建）
-
-### 3. 启动在线推理服务
-
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-### 4. 启动异步任务（阶段C）
-
-```bash
-celery -A app.core.celery_app.celery_app worker --loglevel=info
-```
-
-若本机未部署 PostgreSQL / Redis，可先通过 Docker 启动基础服务：
-
-```bash
-docker compose up -d postgres redis
-```
-
-如果仅做前端联调且本机未启动 PostgreSQL，可在 `.env` 中保留
-`QA_DATABASE_FALLBACK_TO_SQLITE=true`（默认即为 true），
-后端在 PostgreSQL 不可用时会自动回退到 `data/processed/stage_c.db`。
-若不想打印完整数据库异常细节，可设置 `QA_DATABASE_FALLBACK_VERBOSE=false`（默认值）。
-
-### 5. 打开前端页面
-
-#### 过渡静态页（兼容保留）
-
-```text
-app/index.html
-app/review.html
-```
-
-#### React + TS 产品化前端（阶段D）
-
-```bash
-cd frontend
 npm install
+```
+
+### 配置 `.env`
+```bash
+cp .env.example .env
+```
+
+最小建议配置（按本地环境修改）：
+- 模型目录：`QA_ROOT_MODEL_DIR`、`QA_DIRECT_MODEL_DIR`、`QA_EVASIVE_MODEL_DIR`
+- 数据库：`QA_DATABASE_URL`
+- 任务队列：`QA_CELERY_BROKER_URL`、`QA_CELERY_RESULT_BACKEND`
+- 低置信度阈值：`QA_REVIEW_ROOT_THRESHOLD`、`QA_REVIEW_SUB_THRESHOLD`
+- Dify：`QA_DIFY_API_URL`、`QA_DIFY_API_KEY`、`QA_DIFY_OUTPUT_PATH`
+
+### 启动 API / Worker / 前端
+```bash
+# 1) 启动后端 API
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+# 2) 启动 Celery Worker（用于 Agent 建议任务）
+celery -A app.core.celery_app.celery_app worker --loglevel=info --pool=solo --concurrency=1
+# Linux / Docker 可使用：
+# celery -A app.core.celery_app.celery_app worker --loglevel=info --pool=prefork --concurrency=2
+
+# 3) 启动前端
 npm run dev
 ```
 
-默认地址：`http://127.0.0.1:5173`（或 Vite 输出地址）。
+访问：
+- 前端开发页：`http://127.0.0.1:5173`
+- 健康检查：`http://127.0.0.1:8000/api/health`
+- 说明：当未检测到可用 Celery worker 时，`/review/{sample_id}/agent-suggestion` 会自动回退为 API 进程内执行，避免任务长期处于 `pending`。
 
-### 6. 核心 API（阶段D）
+若使用 Celery Worker，请确保 Redis 可用，否则会出现
+`Cannot connect to redis://localhost:6379/0 (10061)`：
+```bash
+# 方式1：Docker（推荐）
+docker compose up -d redis
 
-- `POST /infer`：单条问答推理
-- `POST /api/evaluate`：与原型前端兼容的单条推理接口（响应含 `sample_id` 与复核状态）
-- `POST /batch_infer`：创建批量分析任务
-- `GET /jobs/{job_id}`：查询批任务状态与结果
-- `GET /jobs/{job_id}/export`：导出批任务结果 CSV
-- `GET /review/queue`：分页拉取待复核样本队列
-- `GET /review/{sample_id}`：查看样本详情、模型输出、Agent建议、人工记录
-- `POST /review/{sample_id}/enqueue`：手动把当前样本加入待复核队列
-- `POST /review/{sample_id}/agent-suggestion`：人工触发 Agent 建议（异步）
-- `POST /annotate`：人工确认/修改并回流训练集
+# 方式2：本地调试不启Worker（仅调接口）
+# .env 中设置 QA_CELERY_TASK_ALWAYS_EAGER=true
+```
 
-`/infer` 与 `/api/evaluate` 当前响应中已包含：
-- `root_probabilities`：根节点全概率分布
-- `sub_probabilities`：子节点全概率分布
-- `entity_hits`：实体命中（含 `text/start/end/source_text`）
+说明：
+- [已完成] React 前端已可用（分析/批量/复核）。
+- [已完成] 旧静态页 `app/index.html`、`app/review.html` 仍可联调使用。
+- [进行中] 前端仍是原型形态，非完整商用后台。
 
-### 7. Dify 工作流 I/O 契约（复核建议）
-
-为保证 `AgentService` 与 Dify 工作流稳定对接，建议按以下契约配置：
-
-- 输入变量（Workflow `inputs`）：
-  - `question`：投资者提问文本
-  - `answer`：董秘回答文本
-  - `model_result`：模型初判（默认以 JSON 字符串传入，兼容 Dify `text-input`）
-- 输出内容（建议）：
-  - 返回一个 JSON 对象，字段为 `root_label`、`sub_label`、`confidence`、`reason`
-  - `root_label` 仅允许：`Direct (直接响应)` / `Intermediate (避重就轻)` / `Evasive (打太极)`
-  - `confidence` 为 0~1 浮点数
-  - 可选补充 `evidence` 字段，存放模型判定证据片段
-
-后端默认按以下路径依次读取 Dify 输出：`answer`、`output_text`、`data.answer`、`data.outputs.result` 等。
-若你的工作流输出字段不同，可用环境变量 `QA_DIFY_OUTPUT_PATH` 指定（例如 `data.outputs.result`）。
-若你的工作流把 `model_result` 改成对象输入，可将 `QA_DIFY_MODEL_RESULT_AS_JSON=false`。
-若你希望控制 Agent 建议等待时长，可设置：
-- `QA_DIFY_CONNECT_TIMEOUT`（默认 5 秒）
-- `QA_DIFY_WRITE_TIMEOUT`（默认 10 秒）
-- `QA_DIFY_READ_TIMEOUT`（默认 20 秒，超时后自动回退为模型结论）
-
-兼容说明（后端自动归一）：
-- `root_label` 若输出 `Direct/Intermediate/Evasive/Fully Evasive`，会自动映射到系统标准标签。
-- `sub_label` 在 `Evasive` 下若输出 `以定期报告为准` 等同义表述，会自动映射为 `推迟回答`。
-
----
-
-## 推荐的产品化运行方式（目标形态）
-
-后续产品化版本建议采用以下服务组合：
-
-- `frontend`：React + Ant Design
-- `api`：FastAPI
-- `worker`：Celery
-- `db`：PostgreSQL
-- `cache`：Redis
-- `storage`：MinIO
-- `model-service`：模型推理服务
-
-推荐通过 Docker Compose 一键启动。
-
----
-
-## 用户使用流程
-
-### 场景 1：单条问答分析
-1. 用户输入公司、时间和问答对文本
-2. 系统执行两层识别
-3. 前端展示：
-   - 是否逃避
-   - 置信度
-   - 财务实体高亮或子节点概率雷达图
-4. 若置信度低，则进入待复核队列
-
-### 场景 2：监管批量排查
-1. 用户上传 Excel / CSV 文件
-2. 系统异步批量分析
-3. 返回结果表格与高风险样本筛选
-4. 对低置信度样本进行人工复核
-5. 复核结果沉淀为训练数据
-
----
-
-## Roadmap
-
-### 已完成
-- 金融问答数据清洗与降噪
-- 金融实体过滤
-- LLM 辅助打标
-- Teacher-Student 蒸馏
-- LCPPN 分层分类架构
-- FastAPI 原型部署
-- 阶段C（收缩版）数据飞轮闭环：低置信度入队、Agent建议辅助、人工复核回流
-- PostgreSQL + Redis + Celery 技术栈接入（复核链路）
-- 阶段D 前端升级：React + TypeScript 三页面（分析页、批量任务页、待复核页）
-- 阶段D 可解释结果：实体高亮、概率分布与子节点雷达图（Direct/Intermediate/Evasive）
-- 阶段D 批任务能力：任务进度轮询与 `GET /jobs/{job_id}/export` CSV 导出
-
-### 计划中
-- 数据飞轮与 LoRA 微调自动训练流水线
-- 审计日志与私有化部署脚本
-
----
-
-## 项目价值
-
-这个项目的价值不只是“做出一个模型”，而是完整展示：
-
-- 如何把一个金融 NLP 项目抽象成真实业务场景问题
-- 如何从模型工程走向产品设计
-- 如何围绕低置信度样本构建数据飞轮
-- 如何为监管与合规场景设计轻量级产品原型
-
-它适合用于：
-- 实习招聘作品集
-- 面试项目介绍
-- 展示产品思维 + 技术理解 + 业务抽象能力
-
----
-
-## License
-
-本项目用于学术研究、个人学习、面试展示与产品原型训练。
-
-## 阶段E运行手册（Docker Compose）
-
-阶段E主入口锁定为 `api + worker + redis + postgres`，不包含前端服务。
-
-### 1) 启动
-
+### Docker Compose（推荐演示方式）
 ```bash
 docker compose up --build -d postgres redis api worker
 docker compose ps
 ```
 
-### 2) 健康检查
+## 关键接口说明
+| 方法 | 路径 | 说明 | 当前状态 |
+|---|---|---|---|
+| `POST` | `/infer` | 单条推理（主接口） | [已完成] |
+| `POST` | `/api/evaluate` | 兼容旧前端的单条推理接口 | [已完成] |
+| `POST` | `/batch_infer` | 提交批量推理任务（上限由 `QA_MAX_BATCH_ITEMS` 控制） | [已完成] |
+| `GET` | `/jobs/{id}` | 查询任务状态（批任务 + Agent任务） | [已完成] |
+| `GET` | `/jobs/{id}/export` | 导出批任务结果 CSV | [已完成] |
+| `GET` | `/review/queue` | 获取低置信度复核队列（分页/状态/时间过滤） | [已完成] |
+| `GET` | `/review/{sample_id}` | 获取样本详情（模型输出/Agent建议/人工结果） | [已完成] |
+| `POST` | `/review/{sample_id}/enqueue` | 手动加入复核队列 | [已完成] |
+| `POST` | `/review/{sample_id}/agent-suggestion` | 触发 Dify Agent 辅助复核任务 | [已完成] |
+| `POST` | `/annotate` | 人工确认/修正并回流训练语料 | [已完成] |
+| `GET` | `/api/health` | 服务健康检查 | [已完成] |
 
-```bash
-curl http://127.0.0.1:8000/api/health
-```
+## 数据飞轮说明
+1. 模型推理入库：`/infer` 或 `/batch_infer` 执行后，样本与模型结果写入 `qa_samples`、`model_outputs`，并记录 `model` 来源标注。
+2. 低置信度入队：当根节点/子节点置信度低于阈值，或命中长尾标签时，`review_status` 置为 `pending_review`。
+3. 复核队列消费：人工在 `/review/queue` 查看样本，进入 `/review/{sample_id}` 查看模型细节。
+4. 请求 Agent 建议：人工触发 `/review/{sample_id}/agent-suggestion`，任务异步执行，结果回写为 `agent` 标注并更新状态为 `agent_suggested`。
+5. 人工最终确认：通过 `/annotate` 提交最终标签，状态变更为 `confirmed` 或 `revised`。
+6. 训练集回流：复核结果写入 `data/processed/review_training_corpus.csv`，用于后续离线训练迭代。
 
-预期返回 `status=ok`，并可看到模型初始化状态与任务仓库状态。
+## Dify Agent 接入说明
+### 环境变量
+- `QA_DIFY_API_URL`：Dify 工作流调用地址（如 `/v1/workflows/run`）
+- `QA_DIFY_API_KEY`：Dify API Key
+- `QA_DIFY_USER`：调用 user 字段
+- `QA_DIFY_OUTPUT_PATH`：自定义结果字段路径（如 `data.outputs.result`）
+- `QA_DIFY_MODEL_RESULT_AS_JSON`：是否将 `model_result` 以 JSON 字符串传入
+- `QA_DIFY_CONNECT_TIMEOUT` / `QA_DIFY_WRITE_TIMEOUT` / `QA_DIFY_READ_TIMEOUT`：超时控制
 
-### 3) 阶段E关键配置约束
+### 当前接入方式
+- 后端在 `AgentService` 中通过 `httpx` 调用 Dify，统一解析输出并归一化 `root_label / sub_label / confidence / reason`。
+- 通过 `Celery` 异步执行，避免阻塞主 API 请求。
+- 内置兜底策略：
+  - 未配置 Dify 时回退为模型结论建议。
+  - 超时/结构异常时返回可审计的 fallback 结果并保留原始响应信息。
 
-- Compose 场景强制 `QA_DATABASE_FALLBACK_TO_SQLITE=false`
-- `api/worker` 仅在依赖服务 healthy 后启动
-- `api` 使用非 `--reload` 启动模式
-- `api/worker` 不允许运行时 `pip install`
+### 当前阶段
+- [已完成] 后端调用链路、字段归一化、超时与异常兜底、任务状态轮询接口。
+- [进行中] 真实业务 Dify 工作流的 prompt 细化与稳定性联调（不同工作流输出结构需按项目配置）。
 
-### 4) 常见故障排查
+## 技术栈
+### 后端
+- FastAPI
+- SQLAlchemy
+- Celery
+- Redis
+- PostgreSQL（可回退 SQLite）
 
-1. `api` 启动失败且提示数据库不可用  
-   检查 `postgres` 容器是否 healthy；确认 `QA_DATABASE_URL` 指向 `postgres:5432`。
-2. 触发 Agent 建议任务后长期 pending  
-   检查 `worker` 日志与 `redis` 状态：`docker compose logs worker redis --tail=200`。
-3. 前端 `Failed to fetch`  
-   检查 CORS 配置（`QA_ALLOW_ORIGIN_REGEX`）以及后端接口地址是否指向 `http://127.0.0.1:8000`。
+### 前端
+- React 19
+- TypeScript
+- Vite 8
+- Ant Design
+- TanStack React Query
+- ECharts
 
-### 5) 演示流程建议
+### 模型/训练
+- PyTorch
+- Hugging Face Transformers
+- FlashText
+- Jieba
+- Pandas / Scikit-learn
 
-1. 分析页输入问答，触发模型推理。  
-2. 低置信度样本自动入队，或手动加入待复核队列。  
-3. 在复核页触发 Agent 建议并轮询 `/jobs/{job_id}`。  
-4. 查看复核详情并完成导出。
+### 数据库/任务队列
+- PostgreSQL（结构化数据）
+- SQLite（开发回退）
+- Redis + Celery（异步任务）
+- FastAPI BackgroundTasks（当前批任务执行）
+
+## 适用场景 / 项目价值
+- 监管与合规团队对上市公司问答文本的快速筛查。
+- 金融文本质检场景中的“逃避表述识别 + 复核回流”流程验证。
+- 作品集展示“从研究型模型到产品化升级”的完整工程能力：模型推理、接口设计、前端交互、低置信度复核、数据飞轮。
+
+## Roadmap
+- [已完成] 两层分类推理服务、批量任务、复核闭环、Dify Agent 辅助复核、前端工作台原型。
+- [进行中] 批任务持久化、Dify 工作流联调稳定性、复核台产品化细节。
+- [规划中] 自动化再训练与模型发布、权限与审计体系、更完善的观测与运维指标。
+
+## License
+当前仓库未提供 `LICENSE` 文件。  
+如需对外开源发布，建议补充明确的开源协议（如 MIT/Apache-2.0）并在根目录新增 `LICENSE`。

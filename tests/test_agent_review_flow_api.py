@@ -2,6 +2,7 @@ import time
 
 from fastapi.testclient import TestClient
 
+import app.api.review as review_api
 from app.main import create_app
 from app.services.agent_service import AgentService
 from app.services.inference_service import InferenceService
@@ -72,3 +73,51 @@ def test_minimal_review_flow_with_agent_suggestion(monkeypatch):
         assert detail["agent_suggestion"] is not None
         assert detail["agent_suggestion"]["root_label"] == "Evasive (打太极)"
         assert detail["agent_suggestion"]["sub_label"] == "推迟回答"
+
+
+def test_agent_suggestion_uses_inprocess_fallback_when_no_worker(monkeypatch):
+    class _DummyTask:
+        def __init__(self):
+            self.delay_called = 0
+            self.apply_called = 0
+
+        def delay(self, *args, **kwargs):
+            self.delay_called += 1
+
+        def apply(self, args=(), throw=False):
+            self.apply_called += 1
+
+    dummy_task = _DummyTask()
+
+    def _fake_evaluate(self, question: str, answer: str):
+        return {
+            "root_id": 2,
+            "root_label": "Evasive (打太极)",
+            "root_confidence": 22.0,
+            "sub_label": "推迟回答",
+            "sub_confidence": 31.0,
+            "warning": "低置信度，建议复核",
+        }
+
+    monkeypatch.setattr(InferenceService, "evaluate", _fake_evaluate)
+    monkeypatch.setattr(review_api, "has_live_workers", lambda: False)
+    monkeypatch.setattr(review_api, "generate_agent_suggestion_task", dummy_task)
+
+    app = create_app()
+    with TestClient(app) as client:
+        infer_resp = client.post(
+            "/infer",
+            json={
+                "company_name": "测试公司",
+                "question": "今年分红会提升吗？",
+                "answer": "请关注公司后续公告。",
+            },
+        )
+        assert infer_resp.status_code == 200
+        sample_id = infer_resp.json()["sample_id"]
+
+        job_resp = client.post(f"/review/{sample_id}/agent-suggestion")
+        assert job_resp.status_code == 200
+
+    assert dummy_task.apply_called == 1
+    assert dummy_task.delay_called == 0

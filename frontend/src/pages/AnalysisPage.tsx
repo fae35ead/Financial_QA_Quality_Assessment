@@ -1,25 +1,13 @@
-import { useMutation } from "@tanstack/react-query";
+﻿import { useMutation } from "@tanstack/react-query";
 import { AuditOutlined } from "@ant-design/icons";
-import {
-  Alert,
-  Button,
-  Card,
-  Col,
-  Input,
-  Progress,
-  Row,
-  Space,
-  Statistic,
-  Tag,
-  Typography,
-  message,
-} from "antd";
-import { useMemo, useState } from "react";
+import { Alert, Button, Card, Col, Input, Progress, Row, Space, Statistic, Tag, Typography, message } from "antd";
+import { useEffect, useMemo, useState } from "react";
 
 import { api } from "../api/client";
 import { EntityHighlight } from "../components/EntityHighlight";
 import { ProbabilityRadar } from "../components/ProbabilityRadar";
 import type { InferResponse } from "../types";
+import { STORAGE_KEYS, readLocalState, writeLocalState } from "../utils/persist";
 
 const { TextArea } = Input;
 
@@ -36,8 +24,23 @@ const reviewStatusMeta: Record<string, { label: string; color: string }> = {
   not_queued: { label: "未入队", color: "default" },
 };
 
+type AnalysisPersistedState = {
+  question: string;
+  answer: string;
+  result: InferResponse | null;
+};
+
+function getAnalysisInitialState(): AnalysisPersistedState {
+  const raw = readLocalState<Partial<AnalysisPersistedState>>(STORAGE_KEYS.analysisPage, {});
+  return {
+    question: typeof raw.question === "string" ? raw.question : "",
+    answer: typeof raw.answer === "string" ? raw.answer : "",
+    result: raw.result && typeof raw.result === "object" ? (raw.result as InferResponse) : null,
+  };
+}
+
 function probabilityList(probabilities: Record<string, number>) {
-  return Object.entries(probabilities).sort((left, right) => right[1] - left[1]);
+  return Object.entries(probabilities).sort((a, b) => b[1] - a[1]);
 }
 
 function getReviewStatus(status?: string | null) {
@@ -47,10 +50,19 @@ function getReviewStatus(status?: string | null) {
   return reviewStatusMeta[status] ?? { label: status, color: "default" };
 }
 
+function displayRootLabel(label: string) {
+  const normalized = label.toLowerCase();
+  if (normalized.startsWith("direct")) return "直接响应";
+  if (normalized.startsWith("intermediate")) return "部分响应";
+  if (normalized.startsWith("evasive")) return "逃避回答";
+  return label;
+}
+
 export function AnalysisPage() {
-  const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("");
-  const [result, setResult] = useState<InferResponse | null>(null);
+  const initial = useMemo(() => getAnalysisInitialState(), []);
+  const [question, setQuestion] = useState(initial.question);
+  const [answer, setAnswer] = useState(initial.answer);
+  const [result, setResult] = useState<InferResponse | null>(initial.result);
   const [messageApi, contextHolder] = message.useMessage();
 
   const inferMutation = useMutation({
@@ -58,7 +70,7 @@ export function AnalysisPage() {
     onSuccess: (payload) => {
       setResult(payload);
       if (payload.review_status === "pending_review") {
-        messageApi.success("该样本已自动进入待复核队列。");
+        messageApi.success("该样本已自动加入待复核队列。");
       }
     },
     onError: (error: Error) => {
@@ -69,7 +81,8 @@ export function AnalysisPage() {
   const enqueueMutation = useMutation({
     mutationFn: (sampleId: string) => api.enqueueReview(sampleId),
     onSuccess: (payload) => {
-      messageApi.success(payload.enqueued ? "已手动加入待复核队列。" : "该样本已在待复核队列中。");
+      setResult((prev) => (prev ? { ...prev, review_status: payload.review_status } : prev));
+      messageApi.success(payload.enqueued ? "已加入待复核队列。" : "该样本已在待复核队列中。");
     },
     onError: (error: Error) => {
       messageApi.error(error.message);
@@ -80,42 +93,22 @@ export function AnalysisPage() {
   const readyForAnalysis = question.trim().length > 0 && answer.trim().length > 0;
   const completionRate = readyForAnalysis ? 100 : question.trim().length > 0 || answer.trim().length > 0 ? 50 : 0;
   const reviewStatus = getReviewStatus(result?.review_status);
+
   const strongestRootProbability = useMemo(() => {
-    if (!result) {
-      return null;
-    }
+    if (!result) return null;
     const values = Object.values(result.root_probabilities);
-    if (!values.length) {
-      return null;
-    }
+    if (!values.length) return null;
     return Number((Math.max(...values) * 100).toFixed(2));
   }, [result]);
 
-  const radarProbabilities = useMemo(() => {
-    if (!result) {
-      return null;
-    }
-    if (!probabilityList(result.sub_probabilities).length) {
-      return null;
-    }
-    return result.sub_probabilities;
+  const hasSubProbabilities = useMemo(() => {
+    if (!result) return false;
+    return probabilityList(result.sub_probabilities).length > 0;
   }, [result]);
 
-  const radarTitle = useMemo(() => {
-    if (!result) {
-      return "子节点概率雷达图";
-    }
-    if (result.root_label.startsWith("Direct")) {
-      return "直接回答子节点雷达图";
-    }
-    if (result.root_label.startsWith("Intermediate")) {
-      return "部分响应子节点雷达图";
-    }
-    if (result.root_label.startsWith("Evasive")) {
-      return "逃避战术雷达图";
-    }
-    return "子节点概率雷达图";
-  }, [result]);
+  useEffect(() => {
+    writeLocalState(STORAGE_KEYS.analysisPage, { question, answer, result });
+  }, [question, answer, result]);
 
   return (
     <div className="page-wrap analysis-page fade-in">
@@ -128,10 +121,10 @@ export function AnalysisPage() {
                 首页分析
               </Tag>
               <Typography.Title level={2} className="analysis-hero-title">
-                监管问答智能评估
+                金融问答智能评估
               </Typography.Title>
               <Typography.Paragraph className="analysis-hero-desc">
-                针对单条问答快速完成分类、置信度评估与复核入队判断，保证首屏可读与一步点击直达核心操作。
+                输入单条问答，快速完成分类与置信度判断，并将疑似误判样本送入人工复核。
               </Typography.Paragraph>
               <div className="analysis-hero-stats">
                 <div className="analysis-stat-item">
@@ -151,70 +144,27 @@ export function AnalysisPage() {
           </Col>
           <Col xs={24} xl={8}>
             <Space orientation="vertical" size={10} style={{ width: "100%" }}>
-              <Button
-                type="primary"
-                size="large"
-                onClick={() => inferMutation.mutate()}
-                loading={inferMutation.isPending}
-                disabled={!canSubmit}
-                block
-              >
+              <Button type="primary" size="large" onClick={() => inferMutation.mutate()} loading={inferMutation.isPending} disabled={!canSubmit} block>
                 开始分析
               </Button>
-              <Button
-                size="large"
-                onClick={() => result?.sample_id && enqueueMutation.mutate(result.sample_id)}
-                disabled={!result?.sample_id || enqueueMutation.isPending}
-                block
-              >
-                手动加入待复核队列
+              <Button size="large" onClick={() => result?.sample_id && enqueueMutation.mutate(result.sample_id)} disabled={!result?.sample_id || enqueueMutation.isPending} block>
+                加入待复核队列
               </Button>
-              <Typography.Text type="secondary" className="analysis-action-tip">
-                建议先完成双栏输入，再执行分析。分析成功后可一键加入待复核队列。
-              </Typography.Text>
             </Space>
           </Col>
         </Row>
       </Card>
 
-      <Card className="soft-card analysis-input-card" title="输入区（左右分栏）">
+      <Card className="soft-card analysis-input-card" title="问答输入">
         <Row gutter={[16, 16]}>
           <Col xs={24} lg={12}>
-            <div className="analysis-field-head">
-              <Typography.Text strong>投资者提问</Typography.Text>
-              <Typography.Text type="secondary">{question.length} 字</Typography.Text>
-            </div>
-            <TextArea
-              className="analysis-textarea"
-              value={question}
-              onChange={(event) => setQuestion(event.target.value)}
-              rows={8}
-              placeholder="请输入提问文本"
-            />
+            <TextArea className="analysis-textarea" value={question} onChange={(event) => setQuestion(event.target.value)} rows={8} placeholder="请输入问题文本" />
           </Col>
           <Col xs={24} lg={12}>
-            <div className="analysis-field-head">
-              <Typography.Text strong>董秘回答</Typography.Text>
-              <Typography.Text type="secondary">{answer.length} 字</Typography.Text>
-            </div>
-            <TextArea
-              className="analysis-textarea"
-              value={answer}
-              onChange={(event) => setAnswer(event.target.value)}
-              rows={8}
-              placeholder="请输入回答文本"
-            />
+            <TextArea className="analysis-textarea" value={answer} onChange={(event) => setAnswer(event.target.value)} rows={8} placeholder="请输入回答文本" />
           </Col>
         </Row>
-        {!readyForAnalysis && (
-          <Alert
-            style={{ marginTop: 16 }}
-            type="info"
-            showIcon
-            title="请输入完整问答文本后再开始分析。"
-            banner
-          />
-        )}
+        {!readyForAnalysis && <Alert style={{ marginTop: 16 }} type="info" showIcon title="请先输入完整的问题和回答。" banner />}
       </Card>
 
       {result && (
@@ -224,7 +174,7 @@ export function AnalysisPage() {
             <Col xs={24} md={8}>
               <Card size="small" className="analysis-metric-card">
                 <Space orientation="vertical">
-                  <Tag color={rootTagColor[result.root_id] ?? "blue"}>{result.root_label}</Tag>
+                  <Tag color={rootTagColor[result.root_id] ?? "blue"}>{displayRootLabel(result.root_label)}</Tag>
                   <Statistic title="根节点置信度" value={result.root_confidence} suffix="%" />
                   <Typography.Text type="secondary">{result.sub_label}</Typography.Text>
                 </Space>
@@ -233,7 +183,7 @@ export function AnalysisPage() {
             <Col xs={24} md={8}>
               <Card size="small" className="analysis-metric-card">
                 <Statistic title="子节点置信度" value={result.sub_confidence} suffix="%" />
-                <Typography.Text type="secondary">样本ID：{result.sample_id ?? "-"}</Typography.Text>
+                <Typography.Text type="secondary">样本 ID：{result.sample_id ?? "-"}</Typography.Text>
               </Card>
             </Col>
             <Col xs={24} md={8}>
@@ -252,7 +202,7 @@ export function AnalysisPage() {
                 <Space orientation="vertical" style={{ width: "100%" }}>
                   {probabilityList(result.root_probabilities).map(([label, value]) => (
                     <div key={label} className="analysis-probability-item">
-                      <Typography.Text>{label}</Typography.Text>
+                      <Typography.Text>{displayRootLabel(label)}</Typography.Text>
                       <Progress percent={Number((value * 100).toFixed(2))} size="small" showInfo />
                     </div>
                   ))}
@@ -261,17 +211,17 @@ export function AnalysisPage() {
             </Col>
             <Col xs={24} lg={12}>
               <Card size="small" className="analysis-inner-card" title="子节点概率分布">
-                {probabilityList(result.sub_probabilities).length ? (
+                {hasSubProbabilities ? (
                   <Space orientation="vertical" style={{ width: "100%" }}>
                     {probabilityList(result.sub_probabilities).map(([label, value]) => (
                       <div key={label} className="analysis-probability-item">
                         <Typography.Text>{label}</Typography.Text>
                         <Progress percent={Number((value * 100).toFixed(2))} size="small" showInfo />
-                      </div>
-                    ))}
+                    </div>
+                  ))}
                   </Space>
                 ) : (
-                  <Typography.Text type="secondary">当前分支无子分类概率分布。</Typography.Text>
+                  <Typography.Text type="secondary">当前分支暂无子节点概率分布。</Typography.Text>
                 )}
               </Card>
             </Col>
@@ -294,9 +244,9 @@ export function AnalysisPage() {
             </Col>
           </Row>
 
-          {radarProbabilities && (
-            <Card size="small" className="analysis-inner-card" title={radarTitle} style={{ marginTop: 16 }}>
-              <ProbabilityRadar title={`${result.root_label} 子节点概率分布`} probabilities={radarProbabilities} />
+          {hasSubProbabilities && (
+            <Card size="small" className="analysis-inner-card" title="子节点雷达图" style={{ marginTop: 16 }}>
+              <ProbabilityRadar title="子节点概率分布" probabilities={result.sub_probabilities} />
             </Card>
           )}
         </Card>

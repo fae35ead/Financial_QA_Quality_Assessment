@@ -119,3 +119,17 @@ def test_jobs_endpoint_reads_persisted_agent_job_state():
     assert body["status"] == "failed"
     assert body["failed"] == 1
     assert body["completed"] == 0
+
+
+def test_generate_agent_task_keeps_primary_exception_when_fail_job_also_errors(monkeypatch):
+    def _raise_primary(self, job_id: str):
+        raise RuntimeError("primary db unavailable")
+
+    def _raise_secondary(self, job_id: str, error_message: str):
+        raise RuntimeError("secondary fail_job update error")
+
+    monkeypatch.setattr(ReviewService, "mark_job_started", _raise_primary)
+    monkeypatch.setattr(ReviewService, "fail_job", _raise_secondary)
+
+    with pytest.raises(RuntimeError, match="primary db unavailable"):
+        generate_agent_suggestion_task("job-x", "sample-y")

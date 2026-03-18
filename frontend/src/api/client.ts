@@ -13,7 +13,16 @@ import type {
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, init);
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, init);
+  } catch (error) {
+    const reason =
+      error instanceof Error ? error.message : "network_error";
+    throw new Error(
+      `无法连接后端 ${API_BASE}（可能未启动或被 CORS 拦截）：${reason}`
+    );
+  }
   if (!response.ok) {
     let message = `请求失败: ${response.status}`;
     try {
@@ -57,7 +66,14 @@ export const api = {
   },
 
   async exportJob(jobId: string): Promise<Blob> {
-    const response = await fetch(`${API_BASE}/jobs/${jobId}/export`);
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}/jobs/${jobId}/export`);
+    } catch (error) {
+      const reason =
+        error instanceof Error ? error.message : "network_error";
+      throw new Error(`无法连接后端 ${API_BASE}：${reason}`);
+    }
     if (!response.ok) {
       let message = "导出失败";
       try {

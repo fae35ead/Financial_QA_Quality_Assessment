@@ -64,7 +64,12 @@ export interface ReviewQueueItem {
   answer_text: string;
   layer1_label: string;
   layer1_confidence: number;
-  layer2_json: Record<string, unknown>;
+  layer2_json: {
+    sub_label?: string;
+    sub_confidence?: number;
+    warning?: string | null;
+    [key: string]: unknown;
+  };
   review_status?: string | null;
   is_low_confidence: boolean;
   processed_at: string;
@@ -86,7 +91,12 @@ export interface ReviewDetailResponse {
   model_output: {
     layer1_label: string;
     layer1_confidence: number;
-    layer2_json: Record<string, unknown>;
+    layer2_json: {
+      sub_label?: string;
+      sub_confidence?: number;
+      warning?: string | null;
+      [key: string]: unknown;
+    };
     is_low_confidence: boolean;
     review_status?: string | null;
     processed_at: string;

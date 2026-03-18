@@ -1,17 +1,17 @@
-﻿import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ReviewPage } from "./ReviewPage";
 import { renderWithProviders } from "../test/renderWithProviders";
+import { ReviewPage } from "./ReviewPage";
 
-describe("ReviewPage", () => {
+describe("ReviewPage display", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
-  it("loads queue and renders selected sample detail", async () => {
+  it("hides pending_review tag in queue and shows model confidences in detail", async () => {
     const mockFetch = vi.fn(async (input: string | URL) => {
       const url = String(input);
       if (url.includes("/review/queue")) {
@@ -62,12 +62,16 @@ describe("ReviewPage", () => {
         json: async () => ({ detail: "not found" }),
       };
     });
-    vi.stubGlobal("fetch", mockFetch);
 
+    vi.stubGlobal("fetch", mockFetch);
     renderWithProviders(<ReviewPage />);
+
     await screen.findByText("queue question");
+    expect(screen.queryByText("pending_review")).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByText("queue question"));
     await screen.findByText("queue answer");
-    expect(screen.getByRole("button", { name: "请求 Agent 建议" })).toBeInTheDocument();
+    expect(screen.getByText("根节点置信度：66.2%")).toBeInTheDocument();
+    expect(screen.getByText("子节点置信度：55.4%")).toBeInTheDocument();
   });
 });

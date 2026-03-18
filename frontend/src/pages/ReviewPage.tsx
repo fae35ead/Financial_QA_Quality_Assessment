@@ -1,34 +1,25 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Button,
-  Card,
-  Col,
-  Form,
-  Input,
-  InputNumber,
-  List,
-  Row,
-  Select,
-  Space,
-  Tag,
-  Typography,
-  message,
-} from "antd";
+﻿import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, Card, Col, Form, Input, InputNumber, List, Row, Select, Space, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 
 import { api } from "../api/client";
 
-const ROOT_OPTIONS = [
-  "Direct (直接响应)",
-  "Intermediate (避重就轻)",
-  "Evasive (打太极)",
-];
+const ROOT_OPTIONS = ["Direct (直接响应)", "Intermediate (避重就轻)", "Evasive (打太极)"];
 
 const SUB_OPTIONS: Record<string, string[]> = {
   "Direct (直接响应)": ["资本运作与并购", "技术与研发进展", "产能与项目规划", "合规与风险披露", "财务表现指引"],
-  "Intermediate (避重就轻)": ["无下游细分 (部分响应)"],
+  "Intermediate (避重就轻)": ["无下游细分(部分响应)"],
   "Evasive (打太极)": ["推迟回答", "转移话题", "战略性模糊", "外部归因"],
 };
+
+function displayRootLabel(label?: string | null) {
+  if (!label) return "-";
+  const normalized = label.toLowerCase();
+  if (normalized.startsWith("direct")) return "直接响应";
+  if (normalized.startsWith("intermediate")) return "部分响应";
+  if (normalized.startsWith("evasive")) return "逃避回答";
+  return label;
+}
 
 export function ReviewPage() {
   const [selectedSampleId, setSelectedSampleId] = useState<string | null>(null);
@@ -73,7 +64,7 @@ export function ReviewPage() {
       queryClient.invalidateQueries({ queryKey: ["review-queue"] });
       setAgentJobId(null);
     } else if (status === "failed") {
-      messageApi.error("Agent 建议任务失败。");
+      messageApi.error("Agent 建议任务执行失败。");
       setAgentJobId(null);
     }
   }, [agentJobQuery.data?.status, messageApi, queryClient, selectedSampleId]);
@@ -89,12 +80,7 @@ export function ReviewPage() {
   });
 
   const annotateMutation = useMutation({
-    mutationFn: (payload: {
-      root_label: string;
-      sub_label: string;
-      note?: string;
-      annotator_confidence?: number | null;
-    }) =>
+    mutationFn: (payload: { root_label: string; sub_label: string; note?: string; annotator_confidence?: number | null }) =>
       api.annotate({
         sample_id: selectedSampleId ?? "",
         root_label: payload.root_label,
@@ -104,7 +90,7 @@ export function ReviewPage() {
         annotator_confidence: payload.annotator_confidence,
       }),
     onSuccess: (payload) => {
-      messageApi.success(`提交成功，状态：${payload.review_status}`);
+      messageApi.success(`提交成功：${payload.review_status}`);
       queryClient.invalidateQueries({ queryKey: ["review-queue"] });
       queryClient.invalidateQueries({ queryKey: ["review-detail", selectedSampleId] });
     },
@@ -151,10 +137,7 @@ export function ReviewPage() {
                   }}
                 >
                   <Space direction="vertical" style={{ width: "100%" }}>
-                    <Space>
-                      <Tag>{item.review_status ?? "pending_review"}</Tag>
-                      <Typography.Text type="secondary">{item.layer1_label}</Typography.Text>
-                    </Space>
+                    <Typography.Text type="secondary">{displayRootLabel(item.layer1_label)}</Typography.Text>
                     <Typography.Text ellipsis>{item.question_text}</Typography.Text>
                   </Space>
                 </List.Item>
@@ -169,10 +152,7 @@ export function ReviewPage() {
             title="复核详情"
             extra={
               <Space>
-                <Button
-                  onClick={() => askAgentMutation.mutate()}
-                  disabled={!selectedSampleId || askAgentMutation.isPending || Boolean(agentJobId)}
-                >
+                <Button onClick={() => askAgentMutation.mutate()} disabled={!selectedSampleId || askAgentMutation.isPending || Boolean(agentJobId)}>
                   请求 Agent 建议
                 </Button>
               </Space>
@@ -192,16 +172,23 @@ export function ReviewPage() {
                   <Row gutter={[12, 12]}>
                     <Col xs={24} md={8}>
                       <Card size="small" title="模型结论">
-                        <Typography.Text>{detailQuery.data.model_output.layer1_label}</Typography.Text>
+                        <Typography.Text>{displayRootLabel(detailQuery.data.model_output.layer1_label)}</Typography.Text>
+                        <br />
+                        <Typography.Text type="secondary">{String(detailQuery.data.model_output.layer2_json.sub_label ?? "-")}</Typography.Text>
+                        <br />
+                        <Typography.Text type="secondary">根节点置信度：{detailQuery.data.model_output.layer1_confidence}%</Typography.Text>
                         <br />
                         <Typography.Text type="secondary">
-                          {String(detailQuery.data.model_output.layer2_json.sub_label ?? "-")}
+                          子节点置信度：
+                          {typeof detailQuery.data.model_output.layer2_json.sub_confidence === "number"
+                            ? `${detailQuery.data.model_output.layer2_json.sub_confidence}%`
+                            : "-"}
                         </Typography.Text>
                       </Card>
                     </Col>
                     <Col xs={24} md={8}>
                       <Card size="small" title="Agent 建议">
-                        <Typography.Text>{detailQuery.data.agent_suggestion?.root_label ?? "-"}</Typography.Text>
+                        <Typography.Text>{displayRootLabel(detailQuery.data.agent_suggestion?.root_label)}</Typography.Text>
                         <br />
                         <Typography.Text type="secondary">{detailQuery.data.agent_suggestion?.sub_label ?? "-"}</Typography.Text>
                         <br />
@@ -213,28 +200,22 @@ export function ReviewPage() {
                         <Form
                           form={form}
                           layout="vertical"
-                          onFinish={(values: {
-                            root_label: string;
-                            sub_label: string;
-                            note?: string;
-                            annotator_confidence?: number;
-                          }) =>
+                          onFinish={(values: { root_label: string; sub_label: string; note?: string; annotator_confidence?: number }) =>
                             annotateMutation.mutate({
                               root_label: values.root_label,
                               sub_label: values.sub_label,
                               note: values.note,
-                              annotator_confidence:
-                                typeof values.annotator_confidence === "number" ? values.annotator_confidence : null,
+                              annotator_confidence: typeof values.annotator_confidence === "number" ? values.annotator_confidence : null,
                             })
                           }
                         >
                           <Form.Item label="根标签" name="root_label" rules={[{ required: true }]}>
-                            <Select options={ROOT_OPTIONS.map((item) => ({ label: item, value: item }))} />
+                            <Select options={ROOT_OPTIONS.map((item) => ({ label: displayRootLabel(item), value: item }))} />
                           </Form.Item>
                           <Form.Item label="子标签" name="sub_label" rules={[{ required: true }]}>
                             <Select options={subOptions.map((item) => ({ label: item, value: item }))} />
                           </Form.Item>
-                          <Form.Item label="人工置信度(0-1)" name="annotator_confidence">
+                          <Form.Item label="人工置信度 (0-1)" name="annotator_confidence">
                             <InputNumber style={{ width: "100%" }} min={0} max={1} step={0.01} />
                           </Form.Item>
                           <Form.Item label="备注" name="note">

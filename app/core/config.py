@@ -47,11 +47,25 @@ def _read_env_file_value(project_root: Path, key: str) -> str | None:
     return None
 
 
+def _normalize_origin_regex(pattern: str | None) -> str | None:
+    """兼容 .env 中被双重转义的正则写法（如 127\\.0\\.0\\.1）。"""
+    if not pattern:
+        return None
+    if "\\\\" in pattern:
+        return pattern.replace("\\\\", "\\")
+    return pattern
+
+
 # 解析允许跨域的来源列表，并根据是否为通配符决定是否允许携带凭据。
 def _parse_cors_origins() -> tuple[list[str], bool, str | None]:
     raw = os.getenv(
         "QA_ALLOW_ORIGINS",
-        "http://localhost:5500,http://127.0.0.1:5500,http://localhost:63342,http://127.0.0.1:63342",
+        (
+            "http://0.0.0.0:5173,"
+            "http://localhost:5173,http://127.0.0.1:5173,"
+            "http://localhost:5500,http://127.0.0.1:5500,"
+            "http://localhost:63342,http://127.0.0.1:63342"
+        ),
     ).strip()  # 默认覆盖常见本地前端端口（含 JetBrains 预览端口 63342）。
     if raw == "*":
         return ["*"], False, None  # CORS 规范下通配符来源不能与 credentials=True 同时使用。
@@ -59,14 +73,26 @@ def _parse_cors_origins() -> tuple[list[str], bool, str | None]:
     origins = [item.strip() for item in raw.split(",") if item.strip()]  # 解析逗号分隔来源并清洗空项。
     if not origins:
         origins = [
+            "http://0.0.0.0:5173",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
             "http://localhost:5500",
             "http://127.0.0.1:5500",
             "http://localhost:63342",
             "http://127.0.0.1:63342",
         ]  # 兜底默认值，避免环境变量被误设为空导致全部拒绝。
-    allow_origin_regex = os.getenv("QA_ALLOW_ORIGIN_REGEX", r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$").strip()
-    if not allow_origin_regex:
-        allow_origin_regex = None
+    allow_origin_regex = os.getenv(
+        "QA_ALLOW_ORIGIN_REGEX",
+        (
+            r"^https?://("
+            r"localhost|127\.0\.0\.1|0\.0\.0\.0|"
+            r"10\.\d+\.\d+\.\d+|"
+            r"192\.168\.\d+\.\d+|"
+            r"172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+"
+            r")(:\d+)?$"
+        ),
+    ).strip()
+    allow_origin_regex = _normalize_origin_regex(allow_origin_regex)
     return origins, True, allow_origin_regex  # 非通配符来源时允许携带凭据（如 Cookie/Authorization）。
 
 

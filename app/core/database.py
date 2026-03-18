@@ -17,15 +17,37 @@ load_project_env()
 logger = logging.getLogger(__name__)
 
 
-def _as_bool(name: str, default: bool) -> bool:
-    raw = os.getenv(name)
+def _read_env_file_value(key: str) -> str | None:
+    project_root = Path(__file__).resolve().parents[2]
+    env_file = project_root / ".env"
+    if not env_file.exists():
+        return None
+
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        text = line.strip()
+        if not text or text.startswith("#") or "=" not in text:
+            continue
+        left, right = text.split("=", 1)
+        if left.strip() != key:
+            continue
+        value = right.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        return value
+    return None
+
+
+def _as_bool(name: str, default: bool, *, prefer_env_file: bool = False) -> bool:
+    raw = _read_env_file_value(name) if prefer_env_file else None
+    if raw is None:
+        raw = os.getenv(name)
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _fallback_verbose() -> bool:
-    return _as_bool("QA_DATABASE_FALLBACK_VERBOSE", False)
+    return _as_bool("QA_DATABASE_FALLBACK_VERBOSE", False, prefer_env_file=True)
 
 
 def _default_database_url() -> str:
@@ -44,7 +66,7 @@ DATABASE_URL = os.getenv("QA_DATABASE_URL", _default_database_url()).strip()
 try:
     engine = _build_engine(DATABASE_URL)
 except ModuleNotFoundError as exc:
-    allow_fallback = _as_bool("QA_DATABASE_FALLBACK_TO_SQLITE", True)
+    allow_fallback = _as_bool("QA_DATABASE_FALLBACK_TO_SQLITE", True, prefer_env_file=True)
     if allow_fallback and not DATABASE_URL.startswith("sqlite"):
         fallback_url = _default_database_url()
         if _fallback_verbose():
@@ -85,7 +107,7 @@ def init_db() -> None:
     try:
         Base.metadata.create_all(bind=engine)
     except OperationalError as exc:
-        allow_fallback = _as_bool("QA_DATABASE_FALLBACK_TO_SQLITE", True)
+        allow_fallback = _as_bool("QA_DATABASE_FALLBACK_TO_SQLITE", True, prefer_env_file=True)
         if not allow_fallback or DATABASE_URL.startswith("sqlite"):
             raise
 

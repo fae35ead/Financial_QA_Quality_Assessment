@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from app.core.celery_app import has_live_workers
 from app.models.schemas import (
     AgentSuggestionJobResponse,
     ManualReviewEnqueueResponse,
@@ -16,6 +18,7 @@ from app.models.schemas import (
 from app.tasks.review_tasks import generate_agent_suggestion_task
 
 router = APIRouter(tags=["review"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/review/queue", response_model=ReviewQueueResponse)
@@ -57,7 +60,12 @@ def request_agent_suggestion(sample_id: str, request: Request):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     try:
-        generate_agent_suggestion_task.delay(job_id, sample_id)
+        if has_live_workers():
+            generate_agent_suggestion_task.delay(job_id, sample_id)
+        else:
+            # 无可用 worker 时兜底为进程内执行，避免任务长期 pending。
+            logger.warning("未检测到可用Celery worker，回退为进程内执行Agent任务: job_id=%s", job_id)
+            generate_agent_suggestion_task.apply(args=(job_id, sample_id), throw=True)
     except Exception as exc:
         service.fail_job(job_id, f"Agent任务投递失败: {exc}")
         raise HTTPException(status_code=503, detail=f"Agent任务投递失败: {exc}") from exc

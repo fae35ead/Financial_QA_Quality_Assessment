@@ -1,27 +1,31 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
-import {
-  Alert,
-  Button,
-  Card,
-  Progress,
-  Space,
-  Table,
-  Tag,
-  Typography,
-  Upload,
-  message,
-  type UploadProps,
-} from "antd";
+﻿import { useMutation, useQuery } from "@tanstack/react-query";
 import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
-import { useMemo, useState } from "react";
+import { Alert, Button, Card, Progress, Space, Table, Tag, Typography, Upload, message, type UploadProps } from "antd";
+import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 
 import { api } from "../api/client";
-import type { BatchInferItem, JobResultItem } from "../types";
+import type { BatchInferItem, JobResultItem, JobStatusResponse } from "../types";
+import { STORAGE_KEYS, readLocalState, writeLocalState } from "../utils/persist";
 
 const QUESTION_FIELDS = ["question", "Question", "Qsubj", "问题", "提问"];
 const ANSWER_FIELDS = ["answer", "Answer", "Reply", "回答", "回复"];
 const MAX_BATCH_ITEMS = 500;
+
+type BatchPersistedState = {
+  items: BatchInferItem[];
+  jobId: string | null;
+  jobSnapshot: JobStatusResponse | null;
+};
+
+function getBatchInitialState(): BatchPersistedState {
+  const raw = readLocalState<Partial<BatchPersistedState>>(STORAGE_KEYS.batchPage, {});
+  return {
+    items: Array.isArray(raw.items) ? raw.items : [],
+    jobId: typeof raw.jobId === "string" && raw.jobId.length > 0 ? raw.jobId : null,
+    jobSnapshot: raw.jobSnapshot && typeof raw.jobSnapshot === "object" ? (raw.jobSnapshot as JobStatusResponse) : null,
+  };
+}
 
 export function pickField(record: Record<string, unknown>, candidates: string[]): string {
   for (const candidate of candidates) {
@@ -52,21 +56,33 @@ export function parseWorkbook(rows: Record<string, unknown>[]): BatchInferItem[]
 }
 
 function statusTag(status: string) {
-  if (status === "completed") return <Tag color="success">completed</Tag>;
-  if (status === "failed") return <Tag color="error">failed</Tag>;
-  if (status === "running") return <Tag color="processing">running</Tag>;
-  return <Tag>pending</Tag>;
+  if (status === "completed") return <Tag color="success">已完成</Tag>;
+  if (status === "failed") return <Tag color="error">失败</Tag>;
+  if (status === "running") return <Tag color="processing">运行中</Tag>;
+  return <Tag>待执行</Tag>;
+}
+
+function displayRootLabel(label?: string | null) {
+  if (!label) return "-";
+  const normalized = label.toLowerCase();
+  if (normalized.startsWith("direct")) return "直接响应";
+  if (normalized.startsWith("intermediate")) return "部分响应";
+  if (normalized.startsWith("evasive")) return "逃避回答";
+  return label;
 }
 
 export function BatchTasksPage() {
-  const [items, setItems] = useState<BatchInferItem[]>([]);
-  const [jobId, setJobId] = useState<string | null>(null);
+  const initial = useMemo(() => getBatchInitialState(), []);
+  const [items, setItems] = useState<BatchInferItem[]>(initial.items);
+  const [jobId, setJobId] = useState<string | null>(initial.jobId);
+  const [jobSnapshot, setJobSnapshot] = useState<JobStatusResponse | null>(initial.jobSnapshot);
   const [messageApi, contextHolder] = message.useMessage();
 
   const jobQuery = useQuery({
     queryKey: ["job-status", jobId],
     queryFn: () => api.getJob(jobId ?? ""),
     enabled: Boolean(jobId),
+    initialData: jobSnapshot ?? undefined,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       if (!status || status === "pending" || status === "running") {
@@ -80,7 +96,8 @@ export function BatchTasksPage() {
     mutationFn: () => api.batchInfer(items),
     onSuccess: (payload) => {
       setJobId(payload.job_id);
-      messageApi.success(`批任务已创建：${payload.job_id}`);
+      setJobSnapshot(null);
+      messageApi.success(`批量任务已创建：${payload.job_id}`);
     },
     onError: (error: Error) => {
       messageApi.error(error.message);
@@ -113,37 +130,48 @@ export function BatchTasksPage() {
         const workbook = XLSX.read(buffer, { type: "array" });
         const firstSheet = workbook.SheetNames[0];
         if (!firstSheet) {
-          throw new Error("文件中未找到工作表。");
+          throw new Error("上传文件中未找到工作表。");
         }
         const worksheet = workbook.Sheets[firstSheet];
         const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: "" });
         const parsed = parseWorkbook(rows);
         if (!parsed.length) {
-          throw new Error("未识别到有效问答列，请确认存在 question/answer 或 Qsubj/Reply。");
+          throw new Error("未识别到有效的问题/回答列。");
         }
         if (parsed.length > MAX_BATCH_ITEMS) {
-          throw new Error(`单次批量上限为 ${MAX_BATCH_ITEMS} 条，请拆分后重试。`);
+          throw new Error(`单次最多支持 ${MAX_BATCH_ITEMS} 条样本。`);
         }
         setItems(parsed);
-        messageApi.success(`已解析 ${parsed.length} 条样本`);
+        messageApi.success(`已加载 ${parsed.length} 条样本。`);
       } catch (error) {
-        const text = error instanceof Error ? error.message : "文件解析失败";
+        const text = error instanceof Error ? error.message : "文件解析失败。";
         messageApi.error(text);
       }
       return false;
     },
   };
 
-  const tableData = useMemo<JobResultItem[]>(() => jobQuery.data?.results ?? [], [jobQuery.data?.results]);
-  const exportDisabled = !jobId || jobQuery.data?.status !== "completed" || exportMutation.isPending;
+  const activeJobData = jobQuery.data ?? jobSnapshot;
+  const tableData = useMemo<JobResultItem[]>(() => activeJobData?.results ?? [], [activeJobData?.results]);
+  const exportDisabled = !jobId || activeJobData?.status !== "completed" || exportMutation.isPending;
+
+  useEffect(() => {
+    if (jobQuery.data) {
+      setJobSnapshot(jobQuery.data);
+    }
+  }, [jobQuery.data]);
+
+  useEffect(() => {
+    writeLocalState(STORAGE_KEYS.batchPage, { items, jobId, jobSnapshot });
+  }, [items, jobId, jobSnapshot]);
 
   return (
     <div className="page-wrap fade-in">
       {contextHolder}
-      <Card className="soft-card" title="批量任务页">
+      <Card className="soft-card" title="批量任务">
         <Space direction="vertical" style={{ width: "100%" }} size={16}>
           <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            支持 CSV / Excel 文件，前端解析后调用 `/batch_infer` 提交任务。单次最多 500 条样本。
+            支持上传 CSV/Excel 并创建批量推理任务，单次最多 500 条。
           </Typography.Paragraph>
           <Space wrap>
             <Upload {...uploadProps}>
@@ -152,35 +180,30 @@ export function BatchTasksPage() {
             <Button type="primary" onClick={() => submitMutation.mutate()} disabled={!items.length || submitMutation.isPending}>
               创建批量任务
             </Button>
-            <Button
-              icon={<DownloadOutlined />}
-              disabled={exportDisabled}
-              loading={exportMutation.isPending}
-              onClick={() => exportMutation.mutate()}
-            >
+            <Button icon={<DownloadOutlined />} disabled={exportDisabled} loading={exportMutation.isPending} onClick={() => exportMutation.mutate()}>
               导出 CSV
             </Button>
           </Space>
           <Alert
             type="info"
             showIcon
-            message={`当前已加载样本：${items.length} 条`}
-            description={jobId ? `当前任务ID：${jobId}` : "尚未创建任务"}
+            message={`已加载样本：${items.length}`}
+            description={jobId ? `当前任务 ID：${jobId}` : "尚未创建批量任务。"}
           />
         </Space>
       </Card>
 
       {jobId && (
         <Card className="soft-card" title="任务进度">
-          {jobQuery.data ? (
+          {activeJobData ? (
             <Space direction="vertical" style={{ width: "100%" }}>
               <Space>
                 <Typography.Text strong>状态：</Typography.Text>
-                {statusTag(jobQuery.data.status)}
+                {statusTag(activeJobData.status)}
               </Space>
-              <Progress percent={jobQuery.data.progress} status={jobQuery.data.status === "failed" ? "exception" : "active"} />
+              <Progress percent={activeJobData.progress} status={activeJobData.status === "failed" ? "exception" : "active"} />
               <Typography.Text type="secondary">
-                完成 {jobQuery.data.completed}/{jobQuery.data.total}，失败 {jobQuery.data.failed}
+                已完成 {activeJobData.completed}/{activeJobData.total}，失败 {activeJobData.failed}
               </Typography.Text>
             </Space>
           ) : (
@@ -195,7 +218,7 @@ export function BatchTasksPage() {
           pagination={{ pageSize: 8 }}
           dataSource={tableData}
           columns={[
-            { title: "索引", dataIndex: "index", width: 90 },
+            { title: "序号", dataIndex: "index", width: 90 },
             {
               title: "状态",
               dataIndex: "status",
@@ -204,7 +227,7 @@ export function BatchTasksPage() {
             },
             {
               title: "根标签",
-              render: (_, record) => record.result?.root_label ?? "-",
+              render: (_, record) => displayRootLabel(record.result?.root_label),
             },
             {
               title: "子标签",
@@ -212,8 +235,7 @@ export function BatchTasksPage() {
             },
             {
               title: "置信度",
-              render: (_, record) =>
-                record.result ? `${record.result.root_confidence}% / ${record.result.sub_confidence}%` : "-",
+              render: (_, record) => (record.result ? `${record.result.root_confidence}% / ${record.result.sub_confidence}%` : "-"),
             },
             {
               title: "错误信息",

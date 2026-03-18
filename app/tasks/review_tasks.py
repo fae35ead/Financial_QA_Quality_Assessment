@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+
 from app.core.celery_app import celery_app
 from app.core.config import get_settings
 from app.services.agent_service import AgentService
 from app.services.review_service import ReviewService
+
+logger = logging.getLogger(__name__)
 
 
 @celery_app.task(name="app.tasks.review_tasks.generate_agent_suggestion_task")
@@ -29,5 +33,9 @@ def generate_agent_suggestion_task(job_id: str, sample_id: str) -> dict:
         review_service.finish_agent_job(job_id=job_id, sample_id=sample_id, suggestion=suggestion)
         return {"job_id": job_id, "status": "completed"}
     except Exception as exc:
-        review_service.fail_job(job_id, str(exc))
+        # 二次更新状态失败不应覆盖原始业务异常，避免排障信息丢失。
+        try:
+            review_service.fail_job(job_id, str(exc))
+        except Exception:  # pragma: no cover - 仅在数据库异常等极端路径触发
+            logger.exception("Agent任务失败后写回job状态失败: job_id=%s", job_id)
         raise
