@@ -12,6 +12,12 @@
 - 逃避回答时识别逃避战术类型。
 - 对低置信度样本触发复核闭环（自动入队 -> Agent 建议 -> 人工确认 -> 训练集回流）。
 
+## 项目界面
+<img width="1898" height="2288" alt="首页分析" src="https://github.com/user-attachments/assets/7990dc49-c858-4c27-8812-af84fa48cb4f" />
+![Uploading 批量任务.png…]()
+![Uploading 人工复核.png…]()
+
+
 ---
 ## 如何运行
 ### 环境准备
